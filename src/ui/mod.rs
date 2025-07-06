@@ -1,35 +1,71 @@
-use iced::Element;
+use iced::{
+    widget::{button, column, row},
+    Element,
+};
 
 mod chat;
+mod settings;
 
 #[derive(Debug, Default)]
 pub struct Ergon {
-    messages: Vec<ChatMessage>,
-    input_value: String,
-}
-
-#[derive(Debug, Clone)]
-struct ChatMessage {
-    sender: Sender,
-    content: String,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Sender {
-    User,
-    Bot,
+    current_page: PageId,
+    chat: chat::State,
+    pub settings: settings::State,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    InputChanged(String),
-    SendMessage,
+    Navigate(PageId),
+    Chat(chat::Action),
+    Settings(settings::Action),
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Default)]
+pub enum PageId {
+    #[default]
+    Chat,
+    Settings,
 }
 
 pub fn update(state: &mut Ergon, action: Message) {
-    chat::update_chat(state, action);
+    match action {
+        Message::Navigate(page_id) => state.current_page = page_id,
+        Message::Chat(chat_action) => {
+            state.chat.update(chat_action);
+        }
+        Message::Settings(settings_action) => {
+            state.settings.update(settings_action);
+        }
+    }
 }
 
 pub fn view(state: &Ergon) -> Element<Message> {
-    chat::chat_view(state)
+    let navigation = build_navigation_bar(&state.current_page);
+
+    let page_content = match &state.current_page {
+        PageId::Chat => state.chat.view().map(Message::Chat),
+        PageId::Settings => state.settings.view().map(Message::Settings),
+    };
+
+    column![navigation, page_content]
+        .spacing(10)
+        .padding(10)
+        .into()
+}
+
+fn build_navigation_bar(current_page: &PageId) -> Element<'static, Message> {
+    row![
+        button("Chat").on_press_maybe(if current_page != &PageId::Chat {
+            Some(Message::Navigate(PageId::Chat))
+        } else {
+            None
+        }),
+        button("Settings").on_press_maybe(if current_page != &PageId::Settings {
+            Some(Message::Navigate(PageId::Settings))
+        } else {
+            None
+        }),
+    ]
+    .spacing(10)
+    .into()
 }
