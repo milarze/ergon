@@ -1,4 +1,4 @@
-use iced::widget::{button, container, row};
+use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 
 use crate::config::Config;
@@ -12,6 +12,9 @@ pub struct State {
 #[derive(Debug, Clone)]
 pub enum Action {
     ChangeTheme(Theme),
+    ChangeOpenAIKey(String),
+    ChangeOpenAIUrl(String),
+    SaveSettings,
 }
 
 impl State {
@@ -19,30 +22,63 @@ impl State {
         match action {
             Action::ChangeTheme(theme) => {
                 self.config.theme = theme;
+            }
+            Action::ChangeOpenAIKey(api_key) => {
+                self.config.openai.api_key = api_key;
+            }
+            Action::ChangeOpenAIUrl(endpoint) => {
+                self.config.openai.endpoint = endpoint;
+            }
+            Action::SaveSettings => {
                 self.config.update_settings();
             }
         }
     }
 
     pub fn view(&self) -> Element<Action> {
-        let theme_selector = row![
-            button("Light").on_press(Action::ChangeTheme(Theme::Light)),
-            button("Dark").on_press(Action::ChangeTheme(Theme::Dark)),
+        let col = column![
+            self.theme_view(),
+            self.openai_view(),
+            button("Save Settings").on_press(Action::SaveSettings)
         ]
-        .spacing(10)
-        .align_y(Alignment::Center);
-
-        container(theme_selector)
+        .spacing(20)
+        .padding(20)
+        .align_x(Alignment::Center);
+        container(col)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .into()
     }
+
+    fn theme_view(&self) -> iced::widget::Row<'_, Action> {
+        row![
+            button("Light").on_press(Action::ChangeTheme(Theme::Light)),
+            button("Dark").on_press(Action::ChangeTheme(Theme::Dark)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+    }
+
+    fn openai_view(&self) -> iced::widget::Row<'_, Action> {
+        row![
+            text("OpenAI API Key:"),
+            text_input("Enter API Key", &self.config.openai.api_key)
+                .on_input(|value| Action::ChangeOpenAIKey(value)),
+            text("Endpoint:"),
+            text_input("Enter Endpoint", &self.config.openai.endpoint)
+                .on_input(|value| Action::ChangeOpenAIUrl(value)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::config::OpenAIConfig;
+
     use super::*;
 
     #[test]
@@ -50,5 +86,44 @@ mod tests {
         let mut state = State::default();
         state.update(Action::ChangeTheme(Theme::Dark));
         assert_eq!(state.config.theme, Theme::Dark);
+    }
+
+    #[test]
+    fn test_update_openai_key() {
+        let mut state = State::default();
+        state.update(Action::ChangeOpenAIKey("new_api_key".to_string()));
+        assert_eq!(state.config.openai.api_key, "new_api_key");
+    }
+
+    #[test]
+    fn test_update_openai_url() {
+        let mut state = State::default();
+        state.update(Action::ChangeOpenAIUrl(
+            "https://new.endpoint.com".to_string(),
+        ));
+        assert_eq!(state.config.openai.endpoint, "https://new.endpoint.com");
+    }
+
+    #[test]
+    fn test_save_settings() {
+        let mut state = State {
+            config: Config {
+                theme: Theme::Light,
+                openai: OpenAIConfig {
+                    api_key: String::new(),
+                    endpoint: "https://api.openai.com/v1/".to_string(),
+                },
+                settings_file: "./test.json".to_string(),
+            },
+        };
+        state.update(Action::ChangeTheme(Theme::Dark));
+        state.update(Action::ChangeOpenAIKey("test_key".to_string()));
+        state.update(Action::ChangeOpenAIUrl("https://api.test.com".to_string()));
+        state.update(Action::SaveSettings);
+
+        // Assuming update_settings persists the changes, we can check the config
+        assert_eq!(state.config.theme, Theme::Dark);
+        assert_eq!(state.config.openai.api_key, "test_key");
+        assert_eq!(state.config.openai.endpoint, "https://api.test.com");
     }
 }

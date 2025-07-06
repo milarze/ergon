@@ -4,17 +4,36 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 const SETTINGS_FILE: &str = "settings.json";
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenAIConfig {
+    pub api_key: String,
+    pub endpoint: String,
+}
+
+impl Default for OpenAIConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            endpoint: "https://api.openai.com/v1/".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
+    pub openai: OpenAIConfig,
+    pub settings_file: String,
 }
 
 impl Config {
-    fn load_settings() -> Self {
-        let settings_file_path = Self::settings_file_path();
+    fn load_settings(path: Option<String>) -> Self {
+        let settings_file_path = path.unwrap_or_else(|| Self::settings_file_path());
         if let Err(_) = std::fs::exists(&settings_file_path) {
             let default_settings = Self {
                 theme: Theme::default(),
+                openai: OpenAIConfig::default(),
+                settings_file: settings_file_path.clone(),
             };
             let settings_json = serde_json::to_string(&default_settings).unwrap();
             std::fs::write(&settings_file_path, settings_json)
@@ -22,25 +41,28 @@ impl Config {
             return default_settings;
         }
 
-        if let Ok(settings_json) = std::fs::read_to_string(settings_file_path) {
+        if let Ok(settings_json) = std::fs::read_to_string(&settings_file_path) {
             if let Ok(settings) = serde_json::from_str::<Self>(&settings_json) {
                 return settings;
             } else {
                 return Self {
                     theme: Theme::default(),
+                    openai: OpenAIConfig::default(),
+                    settings_file: settings_file_path.clone(),
                 };
             }
         } else {
             return Self {
                 theme: Theme::default(),
+                openai: OpenAIConfig::default(),
+                settings_file: settings_file_path.clone(),
             };
         }
     }
 
     pub fn update_settings(&self) {
         let settings_json = serde_json::to_string(self).expect("Failed to serialize settings");
-        std::fs::write(Self::settings_file_path(), settings_json)
-            .expect("Failed to write settings file");
+        std::fs::write(&self.settings_file, settings_json).expect("Failed to write settings file");
     }
 
     fn settings_file_path() -> String {
@@ -61,7 +83,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::load_settings()
+        Self::load_settings(None)
     }
 }
 
@@ -77,6 +99,7 @@ impl Serialize for Config {
         };
         let mut state = serializer.serialize_struct("Config", 1)?;
         state.serialize_field("theme", theme_name)?;
+        state.serialize_field("openai", &self.openai)?;
         state.end()
     }
 }
@@ -88,6 +111,7 @@ impl<'de> Deserialize<'de> for Config {
     {
         enum Fields {
             Theme,
+            OpenAI,
         }
 
         impl<'de> Deserialize<'de> for Fields {
@@ -110,7 +134,8 @@ impl<'de> Deserialize<'de> for Config {
                     {
                         match value {
                             "theme" => Ok(Fields::Theme),
-                            _ => Err(E::unknown_field(value, &["theme"])),
+                            "openai" => Ok(Fields::OpenAI),
+                            _ => Err(E::unknown_field(value, &["theme", "openai"])),
                         }
                     }
                 }
@@ -132,6 +157,7 @@ impl<'de> Deserialize<'de> for Config {
                 V: serde::de::MapAccess<'de>,
             {
                 let mut theme = None;
+                let mut openai = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -146,11 +172,24 @@ impl<'de> Deserialize<'de> for Config {
                                 _ => Theme::default(),
                             });
                         }
+                        Fields::OpenAI => {
+                            let openai_map =
+                                map.next_value::<serde_json::Map<String, serde_json::Value>>()?;
+                            openai = Some(
+                                OpenAIConfig::deserialize(serde_json::Value::Object(openai_map))
+                                    .map_err(serde::de::Error::custom)?,
+                            );
+                        }
                     }
                 }
 
                 let theme = theme.ok_or_else(|| serde::de::Error::missing_field("theme"))?;
-                Ok(Config { theme })
+                let openai = openai.ok_or_else(|| serde::de::Error::missing_field("openai"))?;
+                Ok(Config {
+                    theme,
+                    openai,
+                    settings_file: Config::settings_file_path(),
+                })
             }
         }
 
@@ -170,15 +209,24 @@ mod tests {
 
     #[test]
     fn test_serialize_config() {
-        let config = Config { theme: Theme::Dark };
+        let config = Config {
+            theme: Theme::Dark,
+            openai: OpenAIConfig::default(),
+            settings_file: "./test.json".to_string(),
+        };
         let serialized = serde_json::to_string(&config).unwrap();
         assert!(serialized.contains("\"theme\":\"Dark\""));
+        assert!(serialized
+            .contains("\"openai\":{\"api_key\":\"\",\"endpoint\":\"https://api.openai.com/v1/\"}"));
     }
 
     #[test]
     fn test_deserialize_config() {
-        let json = r#"{"theme":"Light"}"#;
+        let json =
+            r#"{"theme":"Light","openai":{"api_key":"","endpoint":"https://api.openai.com/v1/"}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Light);
+        assert_eq!(config.openai.api_key, "");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
     }
 }
