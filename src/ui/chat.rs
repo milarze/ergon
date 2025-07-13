@@ -1,5 +1,5 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
-use iced::{Alignment, Element, Length};
+use iced::{Alignment, Element, Length, Task};
 
 #[derive(Debug, Default, Clone)]
 pub struct State {
@@ -17,6 +17,7 @@ pub struct ChatMessage {
 pub enum Action {
     InputChanged(String),
     SendMessage,
+    ResponseReceived(Result<String, String>),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -26,12 +27,14 @@ enum Sender {
 }
 
 impl State {
-    pub fn update(&mut self, action: Action) {
+    pub fn update(&mut self, action: Action) -> Task<Action> {
         match action {
             Action::InputChanged(value) => {
                 self.input_value = value;
+                Task::none()
             }
             Action::SendMessage => {
+                println!("Sending message: {}", self.input_value);
                 if !self.input_value.is_empty() {
                     let user_message = ChatMessage {
                         sender: Sender::User,
@@ -39,14 +42,27 @@ impl State {
                     };
                     self.messages.push(user_message);
 
-                    let bot_response = ChatMessage {
-                        sender: Sender::Bot,
-                        content: format!("You said: '{}'", self.input_value),
-                    };
-                    self.messages.push(bot_response);
-
-                    self.input_value.clear();
+                    Task::perform(
+                        complete_message(self.messages.clone()),
+                        Action::ResponseReceived,
+                    )
+                } else {
+                    Task::none()
                 }
+            }
+            Action::ResponseReceived(response) => {
+                println!("Response received: {:?}", response);
+                if let Ok(message) = response {
+                    let bot_message = ChatMessage {
+                        sender: Sender::Bot,
+                        content: message,
+                    };
+                    self.messages.push(bot_message);
+                } else {
+                    println!("Error receiving response: {:?}", response);
+                }
+                self.input_value.clear();
+                Task::none()
             }
         }
     }
@@ -64,6 +80,14 @@ impl State {
             .height(Length::Fill)
             .into()
     }
+}
+
+async fn complete_message(messages: Vec<ChatMessage>) -> Result<String, String> {
+    println!("Completing message with: {:?}", messages);
+    Ok(format!(
+        "Message sent: {}",
+        messages.last().map_or("", |msg| &msg.content)
+    ))
 }
 
 fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
@@ -96,15 +120,20 @@ fn build_input_area(input_value: &str) -> Element<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::futures::executor::block_on;
 
     #[test]
     fn test_input_changed() {
         let mut state = State::default();
 
         let message = Action::InputChanged("Hello, world!".to_string());
-        state.update(message);
+        let _ = state.update(message);
 
         assert_eq!(state.input_value, "Hello, world!");
+    }
+
+    async fn mock_complete_message(_messages: Vec<ChatMessage>) -> Result<String, String> {
+        Ok("Mocked response".to_string())
     }
 
     #[test]
@@ -115,17 +144,38 @@ mod tests {
         };
 
         let message = Action::SendMessage;
-        state.update(message);
+        let _ = state.update(message);
+        let result_action = block_on(async { mock_complete_message(state.messages.clone()).await });
 
-        assert_eq!(state.input_value, "");
-
-        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages.len(), 1);
 
         assert_eq!(state.messages[0].sender, Sender::User);
         assert_eq!(state.messages[0].content, "This is a test");
 
-        assert_eq!(state.messages[1].sender, Sender::Bot);
-        assert_eq!(state.messages[1].content, "You said: 'This is a test'");
+        assert!(matches!(result_action, Ok(_)));
+    }
+
+    async fn mock_failt_complete_message() -> Result<String, String> {
+        Err("Mocked bot response".to_string())
+    }
+
+    #[test]
+    fn test_send_message_error() {
+        let mut state = State {
+            input_value: "This is a test".to_string(),
+            messages: vec![],
+        };
+
+        let message = Action::SendMessage;
+        let _ = state.update(message);
+        let result_action = block_on(async { mock_failt_complete_message().await });
+
+        assert_eq!(state.messages.len(), 1);
+
+        assert_eq!(state.messages[0].sender, Sender::User);
+        assert_eq!(state.messages[0].content, "This is a test");
+
+        assert!(matches!(result_action, Err(_)));
     }
 
     #[test]
@@ -133,8 +183,44 @@ mod tests {
         let mut state = State::default();
 
         let message = Action::SendMessage;
-        state.update(message);
+        let _ = state.update(message);
 
         assert!(state.messages.is_empty());
+    }
+
+    #[test]
+    fn test_response_received() {
+        let mut state = State {
+            input_value: "Hello".to_string(),
+            messages: vec![ChatMessage {
+                sender: Sender::User,
+                content: "Hello".to_string(),
+            }],
+        };
+
+        let response = Action::ResponseReceived(Ok("Hi there!".to_string()));
+        let _ = state.update(response);
+
+        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages[1].sender, Sender::Bot);
+        assert_eq!(state.messages[1].content, "Hi there!");
+        assert!(state.input_value.is_empty());
+    }
+
+    #[test]
+    fn test_response_received_error() {
+        let mut state = State {
+            input_value: "Hello".to_string(),
+            messages: vec![ChatMessage {
+                sender: Sender::User,
+                content: "Hello".to_string(),
+            }],
+        };
+
+        let response = Action::ResponseReceived(Err("Error occurred".to_string()));
+        let _ = state.update(response);
+
+        assert_eq!(state.messages.len(), 1);
+        assert!(state.input_value.is_empty());
     }
 }

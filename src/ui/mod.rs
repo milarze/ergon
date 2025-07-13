@@ -1,6 +1,6 @@
 use iced::{
     widget::{button, column, row},
-    Element,
+    Element, Task,
 };
 
 mod chat;
@@ -27,14 +27,19 @@ pub enum PageId {
     Settings,
 }
 
-pub fn update(state: &mut Ergon, action: Message) {
+pub fn update(state: &mut Ergon, action: Message) -> Task<Message> {
     match action {
-        Message::Navigate(page_id) => state.current_page = page_id,
+        Message::Navigate(page_id) => {
+            state.current_page = page_id;
+            Task::none()
+        }
         Message::Chat(chat_action) => {
-            state.chat.update(chat_action);
+            let task = state.chat.update(chat_action);
+            task.map(Message::Chat)
         }
         Message::Settings(settings_action) => {
             state.settings.update(settings_action);
+            Task::none()
         }
     }
 }
