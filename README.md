@@ -7,7 +7,7 @@ An LLM chat interface built in Rust.
 - Models (TODO)
   - Supports multiple LLMs
 - MCP (TODO)
-  - SSE
+  - StreamableHTTP
   - STDIO
 
 ## Installation
