@@ -2,6 +2,8 @@
 
 An LLM chat interface built in Rust.
 
+![Ergon](./ErgonChat.png)
+
 ## Features
 
 - Models (TODO)
