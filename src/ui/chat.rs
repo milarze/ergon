@@ -1,5 +1,7 @@
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
-use iced::{Alignment, Element, Length, Task};
+use iced::widget::{
+    button, column, container, markdown, pick_list, row, scrollable, text, text_input,
+};
+use iced::{Alignment, Element, Length, Task, Theme};
 use strum::IntoEnumIterator;
 
 use crate::api::clients::{Clients, Models};
@@ -15,6 +17,7 @@ pub struct State {
 pub struct ChatMessage {
     pub sender: Sender,
     pub content: String,
+    pub markdown_items: Vec<markdown::Item>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,6 +26,7 @@ pub enum Action {
     SendMessage,
     ResponseReceived(Result<String, String>),
     ModelSelected(Models),
+    UrlClicked(String),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -44,6 +48,7 @@ impl State {
                     let user_message = ChatMessage {
                         sender: Sender::User,
                         content: self.input_value.clone(),
+                        markdown_items: markdown::parse(&self.input_value).collect(),
                     };
                     self.messages.push(user_message);
 
@@ -66,7 +71,8 @@ impl State {
                 if let Ok(message) = response {
                     let bot_message = ChatMessage {
                         sender: Sender::Bot,
-                        content: message,
+                        content: message.clone(),
+                        markdown_items: markdown::parse(&message).collect(),
                     };
                     self.messages.push(bot_message);
                 } else {
@@ -78,6 +84,10 @@ impl State {
             Action::ModelSelected(model) => {
                 println!("Model selected: {:?}", model);
                 self.model = Some(model);
+                Task::none()
+            }
+            Action::UrlClicked(url) => {
+                println!("URL clicked: {}", url);
                 Task::none()
             }
         }
@@ -108,18 +118,33 @@ async fn complete_message(
 }
 
 fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
-    let message_column = column(messages.iter().map(|msg| {
-        let formatted_message = match msg.sender {
-            Sender::User => format!("You: {}", msg.content),
-            Sender::Bot => format!("Ergon: {}", msg.content),
-        };
-        text(formatted_message).into()
-    }))
-    .spacing(10);
+    let rows: Vec<Element<Action>> = messages.iter().map(build_message_row).collect();
 
-    scrollable(container(message_column).padding(10))
-        .height(Length::Fill)
-        .into()
+    scrollable(
+        container(column(rows).spacing(10).padding(10))
+            .width(Length::Fill)
+            .padding(10),
+    )
+    .height(Length::Fill)
+    .into()
+}
+
+fn build_message_row(msg: &ChatMessage) -> Element<Action> {
+    let formatted_message = match msg.sender {
+        Sender::User => format!("You: "),
+        Sender::Bot => format!("Bot: "),
+    };
+
+    row![
+        text(formatted_message),
+        markdown(
+            &msg.markdown_items,
+            markdown::Settings::default(),
+            markdown::Style::from_palette(Theme::default().palette())
+        )
+        .map(|url| Action::UrlClicked(url.to_string())),
+    ]
+    .into()
 }
 
 fn build_input_area(state: &State) -> Element<Action> {
@@ -220,6 +245,7 @@ mod tests {
             messages: vec![ChatMessage {
                 sender: Sender::User,
                 content: "Hello".to_string(),
+                markdown_items: markdown::parse("Hello").collect(),
             }],
             model: Some(Models::O4Mini),
         };
@@ -240,6 +266,7 @@ mod tests {
             messages: vec![ChatMessage {
                 sender: Sender::User,
                 content: "Hello".to_string(),
+                markdown_items: markdown::parse("Hello").collect(),
             }],
             model: Some(Models::O4Mini),
         };
