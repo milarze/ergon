@@ -3,8 +3,12 @@ use iced::{
     Element, Task,
 };
 
+use crate::api::clients::openai::OpenAIClient;
+
 mod chat;
 mod settings;
+
+pub use chat::{ChatMessage, Sender};
 
 #[derive(Debug, Default)]
 pub struct Ergon {

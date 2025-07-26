@@ -1,16 +1,20 @@
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Task};
+use strum::IntoEnumIterator;
+
+use crate::api::clients::{Clients, Models};
 
 #[derive(Debug, Default, Clone)]
 pub struct State {
     messages: Vec<ChatMessage>,
     input_value: String,
+    model: Option<Models>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
-    sender: Sender,
-    content: String,
+    pub sender: Sender,
+    pub content: String,
 }
 
 #[derive(Debug, Clone)]
@@ -18,10 +22,11 @@ pub enum Action {
     InputChanged(String),
     SendMessage,
     ResponseReceived(Result<String, String>),
+    ModelSelected(Models),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Sender {
+pub enum Sender {
     User,
     Bot,
 }
@@ -43,7 +48,13 @@ impl State {
                     self.messages.push(user_message);
 
                     Task::perform(
-                        complete_message(self.messages.clone()),
+                        complete_message(
+                            self.messages.clone(),
+                            self.model
+                                .as_ref()
+                                .map_or_else(|| Clients::OpenAI, |model| model.client()),
+                            self.model.clone().unwrap_or(Models::O4Mini),
+                        ),
                         Action::ResponseReceived,
                     )
                 } else {
@@ -64,16 +75,18 @@ impl State {
                 self.input_value.clear();
                 Task::none()
             }
+            Action::ModelSelected(model) => {
+                println!("Model selected: {:?}", model);
+                self.model = Some(model);
+                Task::none()
+            }
         }
     }
 
     pub fn view(&self) -> Element<Action> {
-        let chat_window = column![
-            build_message_list(&self.messages),
-            build_input_area(&self.input_value),
-        ]
-        .spacing(10)
-        .padding(10);
+        let chat_window = column![build_message_list(&self.messages), build_input_area(&self),]
+            .spacing(10)
+            .padding(10);
 
         container(chat_window)
             .width(Length::Fill)
@@ -82,12 +95,16 @@ impl State {
     }
 }
 
-async fn complete_message(messages: Vec<ChatMessage>) -> Result<String, String> {
-    println!("Completing message with: {:?}", messages);
-    Ok(format!(
-        "Message sent: {}",
-        messages.last().map_or("", |msg| &msg.content)
-    ))
+async fn complete_message(
+    messages: Vec<ChatMessage>,
+    client: Clients,
+    model: Models,
+) -> Result<String, String> {
+    let result = client.complete_message(messages, model).await;
+    match result {
+        Ok(response) => Ok(response),
+        Err(err) => Err(err),
+    }
 }
 
 fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
@@ -105,12 +122,17 @@ fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
         .into()
 }
 
-fn build_input_area(input_value: &str) -> Element<Action> {
+fn build_input_area(state: &State) -> Element<Action> {
     row![
-        text_input("Type a message...", input_value)
+        text_input("Type a message...", &state.input_value)
             .on_input(Action::InputChanged)
             .on_submit(Action::SendMessage),
         button("Send").on_press(Action::SendMessage),
+        pick_list(
+            Models::iter().collect::<Vec<_>>(),
+            state.model.as_ref().or(Some(&Models::O4Mini)),
+            Action::ModelSelected
+        ),
     ]
     .spacing(10)
     .align_y(Alignment::Center)
@@ -119,6 +141,7 @@ fn build_input_area(input_value: &str) -> Element<Action> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use iced::futures::executor::block_on;
 
@@ -141,6 +164,7 @@ mod tests {
         let mut state = State {
             input_value: "This is a test".to_string(),
             messages: vec![],
+            model: Some(Models::O4Mini),
         };
 
         let message = Action::SendMessage;
@@ -164,6 +188,7 @@ mod tests {
         let mut state = State {
             input_value: "This is a test".to_string(),
             messages: vec![],
+            model: Some(Models::O4Mini),
         };
 
         let message = Action::SendMessage;
@@ -196,6 +221,7 @@ mod tests {
                 sender: Sender::User,
                 content: "Hello".to_string(),
             }],
+            model: Some(Models::O4Mini),
         };
 
         let response = Action::ResponseReceived(Ok("Hi there!".to_string()));
@@ -215,6 +241,7 @@ mod tests {
                 sender: Sender::User,
                 content: "Hello".to_string(),
             }],
+            model: Some(Models::O4Mini),
         };
 
         let response = Action::ResponseReceived(Err("Error occurred".to_string()));
@@ -222,5 +249,16 @@ mod tests {
 
         assert_eq!(state.messages.len(), 1);
         assert!(state.input_value.is_empty());
+    }
+
+    #[test]
+    fn test_model_selection() {
+        let mut state = State::default();
+        let model = Models::O4Mini;
+
+        let action = Action::ModelSelected(model.clone());
+        let _ = state.update(action);
+
+        assert_eq!(state.model, Some(model));
     }
 }
