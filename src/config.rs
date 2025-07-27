@@ -19,10 +19,26 @@ impl Default for OpenAIConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnthropicConfig {
+    pub api_key: String,
+    pub endpoint: String,
+}
+
+impl Default for AnthropicConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            endpoint: "https://api.anthropic.com/v1/".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
     pub openai: OpenAIConfig,
+    pub anthropic: AnthropicConfig,
     pub settings_file: String,
 }
 
@@ -33,6 +49,7 @@ impl Config {
             let default_settings = Self {
                 theme: Theme::default(),
                 openai: OpenAIConfig::default(),
+                anthropic: AnthropicConfig::default(),
                 settings_file: settings_file_path.clone(),
             };
             let settings_json = serde_json::to_string(&default_settings).unwrap();
@@ -48,6 +65,7 @@ impl Config {
                 return Self {
                     theme: Theme::default(),
                     openai: OpenAIConfig::default(),
+                    anthropic: AnthropicConfig::default(),
                     settings_file: settings_file_path.clone(),
                 };
             }
@@ -55,6 +73,7 @@ impl Config {
             return Self {
                 theme: Theme::default(),
                 openai: OpenAIConfig::default(),
+                anthropic: AnthropicConfig::default(),
                 settings_file: settings_file_path.clone(),
             };
         }
@@ -100,6 +119,7 @@ impl Serialize for Config {
         let mut state = serializer.serialize_struct("Config", 1)?;
         state.serialize_field("theme", theme_name)?;
         state.serialize_field("openai", &self.openai)?;
+        state.serialize_field("anthropic", &self.anthropic)?;
         state.end()
     }
 }
@@ -112,6 +132,7 @@ impl<'de> Deserialize<'de> for Config {
         enum Fields {
             Theme,
             OpenAI,
+            Anthropic,
         }
 
         impl<'de> Deserialize<'de> for Fields {
@@ -135,6 +156,7 @@ impl<'de> Deserialize<'de> for Config {
                         match value {
                             "theme" => Ok(Fields::Theme),
                             "openai" => Ok(Fields::OpenAI),
+                            "anthropic" => Ok(Fields::Anthropic),
                             _ => Err(E::unknown_field(value, &["theme", "openai"])),
                         }
                     }
@@ -158,6 +180,7 @@ impl<'de> Deserialize<'de> for Config {
             {
                 let mut theme = None;
                 let mut openai = None;
+                let mut anthropic = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -180,14 +203,26 @@ impl<'de> Deserialize<'de> for Config {
                                     .map_err(serde::de::Error::custom)?,
                             );
                         }
+                        Fields::Anthropic => {
+                            let anthropic_map =
+                                map.next_value::<serde_json::Map<String, serde_json::Value>>()?;
+                            anthropic = Some(
+                                AnthropicConfig::deserialize(serde_json::Value::Object(
+                                    anthropic_map,
+                                ))
+                                .map_err(serde::de::Error::custom)?,
+                            );
+                        }
                     }
                 }
 
                 let theme = theme.ok_or_else(|| serde::de::Error::missing_field("theme"))?;
-                let openai = openai.ok_or_else(|| serde::de::Error::missing_field("openai"))?;
+                let openai = openai.unwrap_or_default();
+                let anthropic = anthropic.unwrap_or_default();
                 Ok(Config {
                     theme,
                     openai,
+                    anthropic,
                     settings_file: Config::settings_file_path(),
                 })
             }
@@ -212,12 +247,16 @@ mod tests {
         let config = Config {
             theme: Theme::Dark,
             openai: OpenAIConfig::default(),
+            anthropic: AnthropicConfig::default(),
             settings_file: "./test.json".to_string(),
         };
         let serialized = serde_json::to_string(&config).unwrap();
         assert!(serialized.contains("\"theme\":\"Dark\""));
         assert!(serialized
             .contains("\"openai\":{\"api_key\":\"\",\"endpoint\":\"https://api.openai.com/v1/\"}"));
+        assert!(serialized.contains(
+            "\"anthropic\":{\"api_key\":\"\",\"endpoint\":\"https://api.anthropic.com/v1/\"}"
+        ));
     }
 
     #[test]
@@ -228,5 +267,40 @@ mod tests {
         assert_eq!(config.theme, Theme::Light);
         assert_eq!(config.openai.api_key, "");
         assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+    }
+
+    #[test]
+    fn test_deserialize_config_without_anthropic() {
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "test_key");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+    }
+
+    #[test]
+    fn test_deserialize_config_with_anthropic() {
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/"}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "test_key");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "test_anthropic_key");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+    }
+
+    #[test]
+    fn test_deserialize_config_without_openai() {
+        let json = r#"{"theme":"Dark","anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/"}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "test_anthropic_key");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
     }
 }

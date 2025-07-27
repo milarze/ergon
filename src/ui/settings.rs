@@ -14,6 +14,8 @@ pub enum Action {
     ChangeTheme(Theme),
     ChangeOpenAIKey(String),
     ChangeOpenAIUrl(String),
+    ChangeAnthropicKey(String),
+    ChangeAnthropicUrl(String),
     SaveSettings,
 }
 
@@ -29,6 +31,12 @@ impl State {
             Action::ChangeOpenAIUrl(endpoint) => {
                 self.config.openai.endpoint = endpoint;
             }
+            Action::ChangeAnthropicKey(api_key) => {
+                self.config.anthropic.api_key = api_key;
+            }
+            Action::ChangeAnthropicUrl(endpoint) => {
+                self.config.anthropic.endpoint = endpoint;
+            }
             Action::SaveSettings => {
                 self.config.update_settings();
             }
@@ -39,6 +47,7 @@ impl State {
         let col = column![
             self.theme_view(),
             self.openai_view(),
+            self.anthropic_view(),
             button("Save Settings").on_press(Action::SaveSettings)
         ]
         .spacing(20)
@@ -73,11 +82,24 @@ impl State {
         .spacing(10)
         .align_y(Alignment::Center)
     }
+
+    fn anthropic_view(&self) -> iced::widget::Row<'_, Action> {
+        row![
+            text("Anthropic API Key:"),
+            text_input("Enter API Key", &self.config.anthropic.api_key)
+                .on_input(|value| Action::ChangeAnthropicKey(value)),
+            text("Endpoint:"),
+            text_input("Enter Endpoint", &self.config.anthropic.endpoint)
+                .on_input(|value| Action::ChangeAnthropicUrl(value)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::OpenAIConfig;
+    use crate::config::{AnthropicConfig, OpenAIConfig};
 
     use super::*;
 
@@ -113,17 +135,31 @@ mod tests {
                     api_key: String::new(),
                     endpoint: "https://api.openai.com/v1/".to_string(),
                 },
+                anthropic: AnthropicConfig {
+                    api_key: String::new(),
+                    endpoint: "https://api.anthropic.com/v1/".to_string(),
+                },
                 settings_file: "./test.json".to_string(),
             },
         };
         state.update(Action::ChangeTheme(Theme::Dark));
         state.update(Action::ChangeOpenAIKey("test_key".to_string()));
         state.update(Action::ChangeOpenAIUrl("https://api.test.com".to_string()));
+        state.update(Action::ChangeAnthropicKey("hello".to_string()));
+        state.update(Action::ChangeAnthropicUrl(
+            "https://api.anthropic.com/v1/".to_string(),
+        ));
         state.update(Action::SaveSettings);
 
         // Assuming update_settings persists the changes, we can check the config
         assert_eq!(state.config.theme, Theme::Dark);
         assert_eq!(state.config.openai.api_key, "test_key");
         assert_eq!(state.config.openai.endpoint, "https://api.test.com");
+
+        assert_eq!(state.config.anthropic.api_key, "hello");
+        assert_eq!(
+            state.config.anthropic.endpoint,
+            "https://api.anthropic.com/v1/"
+        );
     }
 }
