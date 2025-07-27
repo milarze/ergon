@@ -2,7 +2,7 @@ use strum_macros::{Display, EnumIter, EnumString};
 
 use crate::ui::ChatMessage;
 
-pub mod claude;
+pub mod anthropic;
 pub mod openai;
 
 pub trait ErgonClient {
@@ -16,6 +16,7 @@ pub trait ErgonClient {
 #[derive(Debug, EnumIter, Clone)]
 pub enum Clients {
     OpenAI,
+    Anthropic,
 }
 
 impl Clients {
@@ -30,6 +31,11 @@ impl Clients {
                     .complete_message(messages, model)
                     .await
             }
+            Clients::Anthropic => {
+                anthropic::AnthropicClient::default()
+                    .complete_message(messages, model)
+                    .await
+            }
         }
     }
 }
@@ -38,12 +44,15 @@ impl Clients {
 pub enum Models {
     #[strum(serialize = "o4-mini")]
     O4Mini,
+    #[strum(serialize = "opus-4")]
+    Opus4,
 }
 
 impl Models {
     pub fn client(&self) -> Clients {
         match self {
             Models::O4Mini => Clients::OpenAI,
+            Models::Opus4 => Clients::Anthropic,
         }
     }
 }
