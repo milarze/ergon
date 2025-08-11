@@ -14,7 +14,7 @@ pub struct OpenAIClient {
 
 impl OpenAIClient {
     async fn request(&self, messages: Vec<ChatMessage>, model: Models) -> Result<String, String> {
-        println!(
+        log::info!(
             "OpenAIClient: Requesting completion for {} messages with model {}",
             messages.len(),
             model
@@ -28,9 +28,6 @@ impl OpenAIClient {
             self.config.endpoint.trim_end_matches('/')
         );
         let data = self.serialize_messages(messages, model)?;
-        println!("OpenAIClient: Sending request to {}", url);
-        println!("OpenAIClient: API Key: {}", self.config.api_key);
-        println!("OpenAIClient: Request data: {}", data);
         let response = client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
@@ -47,7 +44,7 @@ impl OpenAIClient {
                         .unwrap_or("")
                         .to_string())
                 } else {
-                    println!(
+                    log::error!(
                         "OpenAIClient: Request failed with status: {}",
                         resp.status()
                     );
@@ -55,7 +52,7 @@ impl OpenAIClient {
                 }
             }
             Err(e) => {
-                println!("OpenAIClient: Request failed: {}", e);
+                log::error!("OpenAIClient: Request failed: {}", e);
                 Err(format!("Request failed: {}", e))
             }
         }
@@ -95,7 +92,7 @@ impl ErgonClient for OpenAIClient {
         messages: Vec<ChatMessage>,
         model: Models,
     ) -> Result<String, String> {
-        println!(
+        log::info!(
             "OpenAIClient: Completing message with {} messages",
             messages.len()
         );

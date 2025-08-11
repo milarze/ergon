@@ -14,7 +14,7 @@ pub struct AnthropicClient {
 
 impl AnthropicClient {
     async fn request(&self, messages: Vec<ChatMessage>, model: Models) -> Result<String, String> {
-        println!(
+        log::info!(
             "AnthropicClient: Requesting completion for {} messages with model {}",
             messages.len(),
             model
@@ -25,9 +25,6 @@ impl AnthropicClient {
         let client = reqwest::Client::new();
         let url = format!("{}/messages", self.config.endpoint.trim_end_matches('/'));
         let data = self.serialize_messages(messages, model)?;
-        println!("AnthropicClient: Sending request to {}", url);
-        println!("AnthropicClient: API Key: {}", self.config.api_key);
-        println!("AnthropicClient: Request data: {}", data);
         let response = client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
@@ -44,7 +41,7 @@ impl AnthropicClient {
                         .unwrap_or("")
                         .to_string())
                 } else {
-                    println!(
+                    log::error!(
                         "AnthropicClient: Request failed with status: {}",
                         resp.status()
                     );
@@ -52,7 +49,7 @@ impl AnthropicClient {
                 }
             }
             Err(e) => {
-                println!("AnthropicClient: Request failed: {}", e);
+                log::error!("AnthropicClient: Request failed: {}", e);
                 Err(format!("Request failed: {}", e))
             }
         }
@@ -92,7 +89,7 @@ impl ErgonClient for AnthropicClient {
         messages: Vec<ChatMessage>,
         model: Models,
     ) -> Result<String, String> {
-        println!(
+        log::info!(
             "AnthropicClient: Completing message with {} messages",
             messages.len()
         );

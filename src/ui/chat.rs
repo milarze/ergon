@@ -43,7 +43,7 @@ impl State {
                 Task::none()
             }
             Action::SendMessage => {
-                println!("Sending message: {}", self.input_value);
+                log::info!("Sending message: {}", self.input_value);
                 if !self.input_value.is_empty() {
                     let user_message = ChatMessage {
                         sender: Sender::User,
@@ -67,7 +67,7 @@ impl State {
                 }
             }
             Action::ResponseReceived(response) => {
-                println!("Response received: {:?}", response);
+                log::info!("Response received: {:?}", response);
                 if let Ok(message) = response {
                     let bot_message = ChatMessage {
                         sender: Sender::Bot,
@@ -76,18 +76,18 @@ impl State {
                     };
                     self.messages.push(bot_message);
                 } else {
-                    println!("Error receiving response: {:?}", response);
+                    log::info!("Error receiving response: {:?}", response);
                 }
                 self.input_value.clear();
                 Task::none()
             }
             Action::ModelSelected(model) => {
-                println!("Model selected: {:?}", model);
+                log::info!("Model selected: {:?}", model);
                 self.model = Some(model);
                 Task::none()
             }
             Action::UrlClicked(url) => {
-                println!("URL clicked: {}", url);
+                log::info!("URL clicked: {}", url);
                 Task::none()
             }
         }
