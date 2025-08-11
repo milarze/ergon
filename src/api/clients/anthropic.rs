@@ -1,6 +1,9 @@
 //! The Claude API client.
 
-use crate::{config::AnthropicConfig, ui::ChatMessage};
+use crate::{
+    config::{AnthropicConfig, Config},
+    ui::ChatMessage,
+};
 
 use super::{ErgonClient, Models};
 
@@ -104,7 +107,7 @@ impl ErgonClient for AnthropicClient {
 impl Default for AnthropicClient {
     fn default() -> Self {
         AnthropicClient {
-            config: AnthropicConfig::default(),
+            config: Config::default().anthropic,
         }
     }
 }
