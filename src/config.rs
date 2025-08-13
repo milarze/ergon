@@ -23,6 +23,7 @@ impl Default for OpenAIConfig {
 pub struct AnthropicConfig {
     pub api_key: String,
     pub endpoint: String,
+    pub max_tokens: u32,
 }
 
 impl Default for AnthropicConfig {
@@ -30,6 +31,7 @@ impl Default for AnthropicConfig {
         Self {
             api_key: String::new(),
             endpoint: "https://api.anthropic.com/v1/".to_string(),
+            max_tokens: 1024,
         }
     }
 }

@@ -27,7 +27,8 @@ impl AnthropicClient {
         let data = self.serialize_messages(messages, model)?;
         let response = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", self.config.api_key))
+            .header("x-api-key", self.config.api_key.clone())
+            .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
             .json(&data)
             .send()
@@ -36,16 +37,30 @@ impl AnthropicClient {
             Ok(resp) => {
                 if resp.status().is_success() {
                     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-                    Ok(json["choices"][0]["message"]["content"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string())
+                    let contents = json
+                        .get("content")
+                        .and_then(|c| c.as_array())
+                        .map(|arr| arr.iter())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|c| {
+                            log::info!("AnthropicClient: Content item: {:?}", c);
+                            // Only process items with type "text"
+                            if c.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                c["text"].as_str()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<&str>>();
+                    log::info!("AnthropicClient: Response content: {:?}", contents);
+                    Ok(contents.join("\n"))
                 } else {
-                    log::error!(
-                        "AnthropicClient: Request failed with status: {}",
-                        resp.status()
-                    );
-                    Err(format!("Error: {}", resp.status()))
+                    let status = resp.status();
+                    let body = resp.text().await.map_err(|e| e.to_string())?;
+                    log::error!("AnthropicClient: Request failed with status: {}", status);
+                    log::error!("AnthropicClient: Response body: {:?}", body);
+                    Err(format!("Error: {}", status))
                 }
             }
             Err(e) => {
@@ -78,6 +93,7 @@ impl AnthropicClient {
         let serialized = serde_json::json!({
             "model": model.to_string(),
             "messages": messages,
+            "max_tokens": self.config.max_tokens,
         });
         Ok(serialized)
     }
