@@ -1,4 +1,5 @@
 pub mod initialize;
+pub mod initialized;
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,12 @@ impl Default for CommandId {
 pub enum CommandMethod {
     #[serde(rename = "initialize")]
     Initialize,
+    #[serde(rename = "notifications/initialized")]
+    Initialized,
+}
+
+fn default_jsonrpc() -> String {
+    "2.0".to_string()
 }
 
 #[cfg(test)]
@@ -55,5 +62,11 @@ mod tests {
         let init_json_str = serde_json::to_string(&CommandMethod::Initialize)
             .expect("Failed to serialize CommandMethod::Initialize");
         assert_eq!(init_json_str, r#""initialize""#);
+    }
+
+    #[test]
+    fn test_default_jsonrpc() {
+        let jsonrpc = default_jsonrpc();
+        assert_eq!(jsonrpc, "2.0");
     }
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{CommandId, CommandMethod};
+use super::{default_jsonrpc, CommandId, CommandMethod};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Initialize {
@@ -60,10 +60,6 @@ pub struct ClientInfo {
     pub name: String,
     pub title: String,
     pub version: String,
-}
-
-fn default_jsonrpc() -> String {
-    "2.0".to_string()
 }
 
 #[cfg(test)]
@@ -240,12 +236,6 @@ mod tests {
             json_str,
             r#"{"name":"Ergon","title":"Ergon Client","version":"0.1.0"}"#
         );
-    }
-
-    #[test]
-    fn test_default_jsonrpc() {
-        let jsonrpc = default_jsonrpc();
-        assert_eq!(jsonrpc, "2.0");
     }
 
     #[test]
