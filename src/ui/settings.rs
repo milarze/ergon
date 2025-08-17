@@ -138,6 +138,7 @@ mod tests {
                 anthropic: AnthropicConfig {
                     api_key: String::new(),
                     endpoint: "https://api.anthropic.com/v1/".to_string(),
+                    max_tokens: 1024,
                 },
                 settings_file: "./test.json".to_string(),
             },

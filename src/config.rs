@@ -257,7 +257,7 @@ mod tests {
         assert!(serialized
             .contains("\"openai\":{\"api_key\":\"\",\"endpoint\":\"https://api.openai.com/v1/\"}"));
         assert!(serialized.contains(
-            "\"anthropic\":{\"api_key\":\"\",\"endpoint\":\"https://api.anthropic.com/v1/\"}"
+            "\"anthropic\":{\"api_key\":\"\",\"endpoint\":\"https://api.anthropic.com/v1/\",\"max_tokens\":1024}"
         ));
     }
 
@@ -286,18 +286,19 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_with_anthropic() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/"}}"#;
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai.api_key, "test_key");
         assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+        assert_eq!(config.anthropic.max_tokens, 1024);
     }
 
     #[test]
     fn test_deserialize_config_without_openai() {
-        let json = r#"{"theme":"Dark","anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/"}}"#;
+        let json = r#"{"theme":"Dark","anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai.api_key, "");
