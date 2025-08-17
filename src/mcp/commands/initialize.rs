@@ -36,24 +36,20 @@ pub struct InitializeParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Capabilities {
     #[serde(rename = "roots", skip_serializing_if = "Option::is_none")]
-    pub roots: Option<Roots>,
+    pub roots: Option<Capability>,
     #[serde(rename = "sampling", skip_serializing_if = "Option::is_none")]
-    pub sampling: Option<Sampling>,
+    pub sampling: Option<Capability>,
     #[serde(rename = "elicitation", skip_serializing_if = "Option::is_none")]
-    pub elicitation: Option<Elicitation>,
+    pub elicitation: Option<Capability>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Roots {
-    #[serde(rename = "listChanged", default)]
-    pub list_changed: bool,
+pub struct Capability {
+    #[serde(rename = "listChanged", skip_serializing_if = "Option::is_none")]
+    pub list_changed: Option<bool>,
+    #[serde(rename = "subscribe", skip_serializing_if = "Option::is_none")]
+    pub subscribe: Option<bool>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Sampling {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Elicitation {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientInfo {
@@ -80,11 +76,18 @@ mod tests {
                     version: "0.1.0".to_string(),
                 },
                 capabilities: Capabilities {
-                    roots: Some(Roots {
-                        list_changed: false,
+                    roots: Some(Capability {
+                        list_changed: Some(false),
+                        subscribe: None,
                     }),
-                    sampling: Some(Sampling {}),
-                    elicitation: Some(Elicitation {}),
+                    sampling: Some(Capability {
+                        list_changed: None,
+                        subscribe: None,
+                    }),
+                    elicitation: Some(Capability {
+                        list_changed: None,
+                        subscribe: None,
+                    }),
                 },
             },
         };
@@ -101,28 +104,42 @@ mod tests {
         assert_eq!(init.params.client_info.version, "0.1.0");
         assert!(matches!(
             init.params.capabilities.roots,
-            Some(Roots {
-                list_changed: false
+            Some(Capability {
+                list_changed: Some(false),
+                subscribe: None
             })
         ));
         assert!(matches!(
             init.params.capabilities.sampling,
-            Some(Sampling {})
+            Some(Capability {
+                list_changed: None,
+                subscribe: None
+            })
         ));
         assert!(matches!(
             init.params.capabilities.elicitation,
-            Some(Elicitation {})
+            Some(Capability {
+                list_changed: None,
+                subscribe: None
+            })
         ));
     }
 
     #[test]
     fn test_capabilities_serialization() {
         let capabilities = Capabilities {
-            roots: Some(Roots {
-                list_changed: false,
+            roots: Some(Capability {
+                list_changed: Some(false),
+                subscribe: None,
             }),
-            sampling: Some(Sampling {}),
-            elicitation: Some(Elicitation {}),
+            sampling: Some(Capability {
+                list_changed: None,
+                subscribe: None,
+            }),
+            elicitation: Some(Capability {
+                list_changed: None,
+                subscribe: None,
+            }),
         };
         let json_str =
             serde_json::to_string(&capabilities).expect("Failed to serialize Capabilities");
@@ -135,11 +152,15 @@ mod tests {
     #[test]
     fn test_capabilities_serialization_without_sampling() {
         let capabilities = Capabilities {
-            roots: Some(Roots {
-                list_changed: false,
+            roots: Some(Capability {
+                list_changed: Some(false),
+                subscribe: None,
             }),
             sampling: None,
-            elicitation: Some(Elicitation {}),
+            elicitation: Some(Capability {
+                list_changed: None,
+                subscribe: None,
+            }),
         };
         let json_str =
             serde_json::to_string(&capabilities).expect("Failed to serialize Capabilities");
@@ -152,10 +173,14 @@ mod tests {
     #[test]
     fn test_capabilities_serialization_without_elicitation() {
         let capabilities = Capabilities {
-            roots: Some(Roots {
-                list_changed: false,
+            roots: Some(Capability {
+                list_changed: Some(false),
+                subscribe: None,
             }),
-            sampling: Some(Sampling {}),
+            sampling: Some(Capability {
+                list_changed: None,
+                subscribe: None,
+            }),
             elicitation: None,
         };
         let json_str =
@@ -167,8 +192,14 @@ mod tests {
     fn test_capabilities_serialization_without_roots() {
         let capabilities = Capabilities {
             roots: None,
-            sampling: Some(Sampling {}),
-            elicitation: Some(Elicitation {}),
+            sampling: Some(Capability {
+                list_changed: None,
+                subscribe: None,
+            }),
+            elicitation: Some(Capability {
+                list_changed: None,
+                subscribe: None,
+            }),
         };
         let json_str =
             serde_json::to_string(&capabilities).expect("Failed to serialize Capabilities");
@@ -185,11 +216,18 @@ mod tests {
                 version: "0.1.0".to_string(),
             },
             capabilities: Capabilities {
-                roots: Some(Roots {
-                    list_changed: false,
+                roots: Some(Capability {
+                    list_changed: Some(false),
+                    subscribe: None,
                 }),
-                sampling: Some(Sampling {}),
-                elicitation: Some(Elicitation {}),
+                sampling: Some(Capability {
+                    list_changed: None,
+                    subscribe: None,
+                }),
+                elicitation: Some(Capability {
+                    list_changed: None,
+                    subscribe: None,
+                }),
             },
         };
         let json_str =
@@ -202,8 +240,9 @@ mod tests {
 
     #[test]
     fn test_roots_serialization() {
-        let roots = Roots {
-            list_changed: false,
+        let roots = Capability {
+            list_changed: Some(false),
+            subscribe: None,
         };
         let json_str = serde_json::to_string(&roots).expect("Failed to serialize Roots");
         assert_eq!(json_str, r#"{"listChanged":false}"#);
@@ -211,14 +250,20 @@ mod tests {
 
     #[test]
     fn test_sampling_serialization() {
-        let sampling = Sampling {};
+        let sampling = Capability {
+            list_changed: None,
+            subscribe: None,
+        };
         let json_str = serde_json::to_string(&sampling).expect("Failed to serialize Sampling");
         assert_eq!(json_str, "{}");
     }
 
     #[test]
     fn test_elicitation_serialization() {
-        let elicitation = Elicitation {};
+        let elicitation = Capability {
+            list_changed: None,
+            subscribe: None,
+        };
         let json_str =
             serde_json::to_string(&elicitation).expect("Failed to serialize Elicitation");
         assert_eq!(json_str, "{}");
@@ -248,11 +293,18 @@ mod tests {
                 version: "0.1.0".to_string(),
             },
             capabilities: Capabilities {
-                roots: Some(Roots {
-                    list_changed: false,
+                roots: Some(Capability {
+                    list_changed: Some(false),
+                    subscribe: None,
                 }),
-                sampling: Some(Sampling {}),
-                elicitation: Some(Elicitation {}),
+                sampling: Some(Capability {
+                    list_changed: None,
+                    subscribe: None,
+                }),
+                elicitation: Some(Capability {
+                    list_changed: None,
+                    subscribe: None,
+                }),
             },
         };
         let init = Initialize::new(params);
