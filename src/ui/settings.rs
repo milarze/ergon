@@ -1,5 +1,6 @@
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
+use iced_aw::number_input;
 
 use crate::config::Config;
 
@@ -16,6 +17,7 @@ pub enum Action {
     ChangeOpenAIUrl(String),
     ChangeAnthropicKey(String),
     ChangeAnthropicUrl(String),
+    ChangeAnthropicMaxTokens(u32),
     SaveSettings,
 }
 
@@ -36,6 +38,9 @@ impl State {
             }
             Action::ChangeAnthropicUrl(endpoint) => {
                 self.config.anthropic.endpoint = endpoint;
+            }
+            Action::ChangeAnthropicMaxTokens(max_tokens) => {
+                self.config.anthropic.max_tokens = max_tokens;
             }
             Action::SaveSettings => {
                 self.config.update_settings();
@@ -91,6 +96,10 @@ impl State {
             text("Endpoint:"),
             text_input("Enter Endpoint", &self.config.anthropic.endpoint)
                 .on_input(|value| Action::ChangeAnthropicUrl(value)),
+            text("Max Tokens:"),
+            number_input(&self.config.anthropic.max_tokens, 1..=4096, |value| {
+                Action::ChangeAnthropicMaxTokens(value)
+            })
         ]
         .spacing(10)
         .align_y(Alignment::Center)
@@ -124,6 +133,32 @@ mod tests {
             "https://new.endpoint.com".to_string(),
         ));
         assert_eq!(state.config.openai.endpoint, "https://new.endpoint.com");
+    }
+
+    #[test]
+    fn test_update_anthropic_key() {
+        let mut state = State::default();
+        state.update(Action::ChangeAnthropicKey("new_anthropic_key".to_string()));
+        assert_eq!(state.config.anthropic.api_key, "new_anthropic_key");
+    }
+
+    #[test]
+    fn test_update_anthropic_url() {
+        let mut state = State::default();
+        state.update(Action::ChangeAnthropicUrl(
+            "https://new.anthropic.endpoint.com".to_string(),
+        ));
+        assert_eq!(
+            state.config.anthropic.endpoint,
+            "https://new.anthropic.endpoint.com"
+        );
+    }
+
+    #[test]
+    fn test_update_anthropic_max_tokens() {
+        let mut state = State::default();
+        state.update(Action::ChangeAnthropicMaxTokens(2048));
+        assert_eq!(state.config.anthropic.max_tokens, 2048);
     }
 
     #[test]
@@ -162,5 +197,6 @@ mod tests {
             state.config.anthropic.endpoint,
             "https://api.anthropic.com/v1/"
         );
+        assert_eq!(state.config.anthropic.max_tokens, 1024);
     }
 }
