@@ -59,10 +59,8 @@ impl State {
                     self.messages.push(user_message);
 
                     if let Some(model_name) = &self.selected_model {
-                        if let Some(model) = self
-                            .available_models
-                            .iter()
-                            .find(|m| &m.model.name == model_name)
+                        if let Some(model) =
+                            get_model_manager().find_model(model_name).unwrap_or(None)
                         {
                             Task::perform(
                                 complete_message(
@@ -133,7 +131,7 @@ impl State {
         }
     }
 
-    pub fn view(&self) -> Element<Action> {
+    pub fn view(&self) -> Element<'_, Action> {
         let chat_window = column![build_message_list(&self.messages), build_input_area(self),]
             .spacing(10)
             .padding(10);
@@ -206,7 +204,7 @@ async fn load_models() -> Vec<AvailableModel> {
     }
 }
 
-fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
+fn build_message_list(messages: &[ChatMessage]) -> Element<'_, Action> {
     let rows: Vec<Element<Action>> = messages.iter().map(build_message_row).collect();
 
     scrollable(
@@ -218,7 +216,7 @@ fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
     .into()
 }
 
-fn build_message_row(msg: &ChatMessage) -> Element<Action> {
+fn build_message_row(msg: &ChatMessage) -> Element<'_, Action> {
     let formatted_message = match msg.sender {
         Sender::User => "You: ".to_string(),
         Sender::Bot => "Bot: ".to_string(),
@@ -236,7 +234,7 @@ fn build_message_row(msg: &ChatMessage) -> Element<Action> {
     .into()
 }
 
-fn build_input_area(state: &State) -> Element<Action> {
+fn build_input_area(state: &State) -> Element<'_, Action> {
     row![
         text_input("Type a message...", &state.input_value)
             .on_input(Action::InputChanged)

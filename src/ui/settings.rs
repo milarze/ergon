@@ -48,7 +48,7 @@ impl State {
         }
     }
 
-    pub fn view(&self) -> Element<Action> {
+    pub fn view(&self) -> Element<'_, Action> {
         let col = column![
             self.theme_view(),
             self.openai_view(),
