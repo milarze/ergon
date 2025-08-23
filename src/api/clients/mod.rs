@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-use strum_macros::{Display, EnumIter, EnumString};
+use strum_macros::EnumIter;
 
 use crate::ui::ChatMessage;
 

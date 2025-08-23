@@ -47,7 +47,7 @@ pub struct Config {
 impl Config {
     fn load_settings(path: Option<String>) -> Self {
         let settings_file_path = path.unwrap_or_else(Self::settings_file_path);
-        if let Err(_) = std::fs::exists(&settings_file_path) {
+        if std::fs::exists(&settings_file_path).is_err() {
             let default_settings = Self {
                 theme: Theme::default(),
                 openai: OpenAIConfig::default(),
