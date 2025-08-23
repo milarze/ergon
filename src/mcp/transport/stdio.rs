@@ -1,5 +1,6 @@
 use super::Transport;
 
+#[allow(dead_code)]
 pub struct Stdio;
 
 impl Transport for Stdio {
