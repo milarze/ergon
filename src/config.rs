@@ -46,7 +46,7 @@ pub struct Config {
 
 impl Config {
     fn load_settings(path: Option<String>) -> Self {
-        let settings_file_path = path.unwrap_or_else(|| Self::settings_file_path());
+        let settings_file_path = path.unwrap_or_else(Self::settings_file_path);
         if let Err(_) = std::fs::exists(&settings_file_path) {
             let default_settings = Self {
                 theme: Theme::default(),
@@ -62,22 +62,22 @@ impl Config {
 
         if let Ok(settings_json) = std::fs::read_to_string(&settings_file_path) {
             if let Ok(settings) = serde_json::from_str::<Self>(&settings_json) {
-                return settings;
+                settings
             } else {
-                return Self {
+                Self {
                     theme: Theme::default(),
                     openai: OpenAIConfig::default(),
                     anthropic: AnthropicConfig::default(),
                     settings_file: settings_file_path.clone(),
-                };
+                }
             }
         } else {
-            return Self {
+            Self {
                 theme: Theme::default(),
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 settings_file: settings_file_path.clone(),
-            };
+            }
         }
     }
 

@@ -79,10 +79,10 @@ impl State {
         row![
             text("OpenAI API Key:"),
             text_input("Enter API Key", &self.config.openai.api_key)
-                .on_input(|value| Action::ChangeOpenAIKey(value)),
+                .on_input(Action::ChangeOpenAIKey),
             text("Endpoint:"),
             text_input("Enter Endpoint", &self.config.openai.endpoint)
-                .on_input(|value| Action::ChangeOpenAIUrl(value)),
+                .on_input(Action::ChangeOpenAIUrl),
         ]
         .spacing(10)
         .align_y(Alignment::Center)
@@ -92,10 +92,10 @@ impl State {
         row![
             text("Anthropic API Key:"),
             text_input("Enter API Key", &self.config.anthropic.api_key)
-                .on_input(|value| Action::ChangeAnthropicKey(value)),
+                .on_input(Action::ChangeAnthropicKey),
             text("Endpoint:"),
             text_input("Enter Endpoint", &self.config.anthropic.endpoint)
-                .on_input(|value| Action::ChangeAnthropicUrl(value)),
+                .on_input(Action::ChangeAnthropicUrl),
             text("Max Tokens:"),
             number_input(&self.config.anthropic.max_tokens, 1..=4096, |value| {
                 Action::ChangeAnthropicMaxTokens(value)
