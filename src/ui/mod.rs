@@ -9,11 +9,30 @@ mod settings;
 
 pub use chat::{ChatMessage, Sender};
 
-#[derive(Debug, Default)]
+pub fn init() -> (Ergon, Task<Message>) {
+    Ergon::new()
+}
+
+#[derive(Debug)]
+#[derive(Default)]
 pub struct Ergon {
     current_page: PageId,
     chat: chat::State,
     pub settings: settings::State,
+}
+
+
+impl Ergon {
+    pub fn new() -> (Self, Task<Message>) {
+        let (chat_state, chat_task) = chat::State::new();
+        let state = Self {
+            current_page: PageId::default(),
+            chat: chat_state,
+            settings: settings::State::default(),
+        };
+        let task = chat_task.map(Message::Chat);
+        (state, task)
+    }
 }
 
 #[derive(Debug, Clone)]

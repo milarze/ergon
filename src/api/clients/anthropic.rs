@@ -5,7 +5,7 @@ use crate::{
     ui::ChatMessage,
 };
 
-use super::{ErgonClient, Models};
+use super::{ErgonClient, Model};
 
 #[derive(Debug, Clone)]
 pub struct AnthropicClient {
@@ -13,7 +13,7 @@ pub struct AnthropicClient {
 }
 
 impl AnthropicClient {
-    async fn request(&self, messages: Vec<ChatMessage>, model: Models) -> Result<String, String> {
+    async fn request(&self, messages: Vec<ChatMessage>, model: &str) -> Result<String, String> {
         log::info!(
             "AnthropicClient: Requesting completion for {} messages with model {}",
             messages.len(),
@@ -70,10 +70,66 @@ impl AnthropicClient {
         }
     }
 
+    async fn request_models(&self) -> Result<Vec<Model>, String> {
+        log::info!("AnthropicClient: Requesting available models");
+        if self.config.api_key.is_empty() {
+            return Err("API key is not set".to_string());
+        }
+        let client = reqwest::Client::new();
+        let url = format!("{}/models", self.config.endpoint.trim_end_matches('/'));
+        let response = client
+            .get(url)
+            .header("x-api-key", self.config.api_key.clone())
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await;
+        match response {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+                    let models = json
+                        .get("data")
+                        .and_then(|m| m.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|model| {
+                                    let id = model
+                                        .get("id")
+                                        .and_then(|n| n.as_str())
+                                        .map(|s| s.to_string());
+                                    let name = model
+                                        .get("display_name")
+                                        .and_then(|n| n.as_str())
+                                        .map(|s| s.to_string());
+                                    Some(Model {
+                                        name: name?,
+                                        id: id?,
+                                    })
+                                })
+                                .collect::<Vec<Model>>()
+                        })
+                        .unwrap_or_default();
+                    log::info!("AnthropicClient: Available models: {:?}", models);
+                    Ok(models)
+                } else {
+                    let status = resp.status();
+                    let body = resp.text().await.map_err(|e| e.to_string())?;
+                    log::error!("AnthropicClient: Request failed with status: {}", status);
+                    log::error!("AnthropicClient: Response body: {:?}", body);
+                    Err(format!("Error: {}", status))
+                }
+            }
+            Err(e) => {
+                log::error!("AnthropicClient: Request failed: {}", e);
+                Err(format!("Request failed: {}", e))
+            }
+        }
+    }
+
     fn serialize_messages(
         &self,
         messages: Vec<ChatMessage>,
-        model: Models,
+        model: &str,
     ) -> Result<serde_json::Value, String> {
         let messages: Vec<serde_json::Value> = messages
             .into_iter()
@@ -91,7 +147,7 @@ impl AnthropicClient {
             })
             .collect();
         let serialized = serde_json::json!({
-            "model": model.to_string(),
+            "model": model,
             "messages": messages,
             "max_tokens": self.config.max_tokens,
         });
@@ -103,17 +159,23 @@ impl ErgonClient for AnthropicClient {
     async fn complete_message(
         &self,
         messages: Vec<ChatMessage>,
-        model: Models,
+        model: &str,
     ) -> Result<String, String> {
         log::info!(
-            "AnthropicClient: Completing message with {} messages",
-            messages.len()
+            "AnthropicClient: Completing message with {} messages using model {}",
+            messages.len(),
+            model
         );
         if messages.is_empty() {
             Err("No messages provided".to_string())
         } else {
             self.request(messages, model).await
         }
+    }
+
+    async fn list_models(&self) -> Result<Vec<Model>, String> {
+        log::info!("AnthropicClient: Listing models");
+        self.request_models().await
     }
 }
 

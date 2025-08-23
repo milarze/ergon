@@ -3,4 +3,4 @@ mod config;
 mod mcp;
 mod ui;
 
-pub use ui::{update, view, Ergon};
+pub use ui::{init, update, view, Ergon};

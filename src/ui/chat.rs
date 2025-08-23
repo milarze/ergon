@@ -1,16 +1,15 @@
+use crate::api::clients::{get_model_manager, AvailableModel, Clients, Model};
 use iced::widget::{
     button, column, container, markdown, pick_list, row, scrollable, text, text_input,
 };
 use iced::{Alignment, Element, Length, Task, Theme};
-use strum::IntoEnumIterator;
-
-use crate::api::clients::{Clients, Models};
 
 #[derive(Debug, Default, Clone)]
 pub struct State {
     messages: Vec<ChatMessage>,
     input_value: String,
-    model: Option<Models>,
+    selected_model: Option<String>,
+    available_models: Vec<AvailableModel>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,7 +24,8 @@ pub enum Action {
     InputChanged(String),
     SendMessage,
     ResponseReceived(Result<String, String>),
-    ModelSelected(Models),
+    ModelSelected(String),
+    ModelsLoaded(Vec<AvailableModel>),
     UrlClicked(String),
 }
 
@@ -36,6 +36,12 @@ pub enum Sender {
 }
 
 impl State {
+    pub fn new() -> (Self, Task<Action>) {
+        let state = Self::default();
+        let task = Task::perform(load_models(), Action::ModelsLoaded);
+        (state, task)
+    }
+
     pub fn update(&mut self, action: Action) -> Task<Action> {
         match action {
             Action::InputChanged(value) => {
@@ -52,16 +58,42 @@ impl State {
                     };
                     self.messages.push(user_message);
 
-                    Task::perform(
-                        complete_message(
-                            self.messages.clone(),
-                            self.model
-                                .as_ref()
-                                .map_or_else(|| Clients::OpenAI, |model| model.client()),
-                            self.model.clone().unwrap_or(Models::O4Mini),
-                        ),
-                        Action::ResponseReceived,
-                    )
+                    if let Some(model_name) = &self.selected_model {
+                        if let Some(model) = self
+                            .available_models
+                            .iter()
+                            .find(|m| &m.model.name == model_name)
+                        {
+                            Task::perform(
+                                complete_message(
+                                    self.messages.clone(),
+                                    model.client.clone(),
+                                    model.model.id.clone(),
+                                ),
+                                Action::ResponseReceived,
+                            )
+                        } else {
+                            // Fallback to default model if selected model not found
+                            Task::perform(
+                                complete_message(
+                                    self.messages.clone(),
+                                    Clients::OpenAI,
+                                    "gpt-4o-mini".to_string(),
+                                ),
+                                Action::ResponseReceived,
+                            )
+                        }
+                    } else {
+                        // No model selected, use default
+                        Task::perform(
+                            complete_message(
+                                self.messages.clone(),
+                                Clients::OpenAI,
+                                "gpt-4o-mini".to_string(),
+                            ),
+                            Action::ResponseReceived,
+                        )
+                    }
                 } else {
                     Task::none()
                 }
@@ -81,9 +113,17 @@ impl State {
                 self.input_value.clear();
                 Task::none()
             }
-            Action::ModelSelected(model) => {
-                log::info!("Model selected: {:?}", model);
-                self.model = Some(model);
+            Action::ModelSelected(model_name) => {
+                log::info!("Model selected: {}", model_name);
+                self.selected_model = Some(model_name);
+                Task::none()
+            }
+            Action::ModelsLoaded(models) => {
+                log::info!("Models loaded: {} models available", models.len());
+                self.available_models = models;
+                if self.selected_model.is_none() && !self.available_models.is_empty() {
+                    self.selected_model = Some(self.available_models[0].model.name.clone());
+                }
                 Task::none()
             }
             Action::UrlClicked(url) => {
@@ -94,7 +134,7 @@ impl State {
     }
 
     pub fn view(&self) -> Element<Action> {
-        let chat_window = column![build_message_list(&self.messages), build_input_area(&self),]
+        let chat_window = column![build_message_list(&self.messages), build_input_area(self),]
             .spacing(10)
             .padding(10);
 
@@ -108,12 +148,61 @@ impl State {
 async fn complete_message(
     messages: Vec<ChatMessage>,
     client: Clients,
-    model: Models,
+    model: String,
 ) -> Result<String, String> {
-    let result = client.complete_message(messages, model).await;
+    let result = client.complete_message(messages, &model).await;
     match result {
         Ok(response) => Ok(response),
         Err(err) => Err(err),
+    }
+}
+
+async fn load_models() -> Vec<AvailableModel> {
+    let manager = get_model_manager();
+    match manager.fetch_models().await {
+        Ok(_) => {
+            match manager.get_models() {
+                Ok(models) => models,
+                Err(_) => {
+                    // Fallback to hardcoded models
+                    vec![
+                        AvailableModel {
+                            model: Model {
+                                name: "gpt-4o-mini".to_string(),
+                                id: "gpt-4o-mini".to_string(),
+                            },
+                            client: Clients::OpenAI,
+                        },
+                        AvailableModel {
+                            model: Model {
+                                name: "Claude 3.5 Sonnet".to_string(),
+                                id: "claude-3-5-sonnet-20241022".to_string(),
+                            },
+                            client: Clients::Anthropic,
+                        },
+                    ]
+                }
+            }
+        }
+        Err(_) => {
+            // Fallback to hardcoded models
+            vec![
+                AvailableModel {
+                    model: Model {
+                        name: "gpt-4o-mini".to_string(),
+                        id: "gpt-4o-mini".to_string(),
+                    },
+                    client: Clients::OpenAI,
+                },
+                AvailableModel {
+                    model: Model {
+                        name: "Claude 3.5 Sonnet".to_string(),
+                        id: "claude-3-5-sonnet-20241022".to_string(),
+                    },
+                    client: Clients::Anthropic,
+                },
+            ]
+        }
     }
 }
 
@@ -131,8 +220,8 @@ fn build_message_list(messages: &[ChatMessage]) -> Element<Action> {
 
 fn build_message_row(msg: &ChatMessage) -> Element<Action> {
     let formatted_message = match msg.sender {
-        Sender::User => format!("You: "),
-        Sender::Bot => format!("Bot: "),
+        Sender::User => "You: ".to_string(),
+        Sender::Bot => "Bot: ".to_string(),
     };
 
     row![
@@ -151,13 +240,21 @@ fn build_input_area(state: &State) -> Element<Action> {
     row![
         text_input("Type a message...", &state.input_value)
             .on_input(Action::InputChanged)
-            .on_submit(Action::SendMessage),
-        button("Send").on_press(Action::SendMessage),
+            .on_submit(Action::SendMessage)
+            .width(Length::FillPortion(8)),
+        button("Send")
+            .on_press(Action::SendMessage)
+            .width(Length::FillPortion(1)),
         pick_list(
-            Models::iter().collect::<Vec<_>>(),
-            state.model.as_ref().or(Some(&Models::O4Mini)),
+            state
+                .available_models
+                .iter()
+                .map(|m| m.model.name.clone())
+                .collect::<Vec<_>>(),
+            state.selected_model.as_ref(),
             Action::ModelSelected
-        ),
+        )
+        .width(Length::FillPortion(3)),
     ]
     .spacing(10)
     .align_y(Alignment::Center)
@@ -189,7 +286,14 @@ mod tests {
         let mut state = State {
             input_value: "This is a test".to_string(),
             messages: vec![],
-            model: Some(Models::O4Mini),
+            selected_model: Some("gpt-4o-mini".to_string()),
+            available_models: vec![AvailableModel {
+                model: Model {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
+                },
+                client: Clients::OpenAI,
+            }],
         };
 
         let message = Action::SendMessage;
@@ -201,7 +305,7 @@ mod tests {
         assert_eq!(state.messages[0].sender, Sender::User);
         assert_eq!(state.messages[0].content, "This is a test");
 
-        assert!(matches!(result_action, Ok(_)));
+        assert!(result_action.is_ok());
     }
 
     async fn mock_failt_complete_message() -> Result<String, String> {
@@ -213,7 +317,14 @@ mod tests {
         let mut state = State {
             input_value: "This is a test".to_string(),
             messages: vec![],
-            model: Some(Models::O4Mini),
+            selected_model: Some("gpt-4o-mini".to_string()),
+            available_models: vec![AvailableModel {
+                model: Model {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
+                },
+                client: Clients::OpenAI,
+            }],
         };
 
         let message = Action::SendMessage;
@@ -225,7 +336,7 @@ mod tests {
         assert_eq!(state.messages[0].sender, Sender::User);
         assert_eq!(state.messages[0].content, "This is a test");
 
-        assert!(matches!(result_action, Err(_)));
+        assert!(result_action.is_err());
     }
 
     #[test]
@@ -247,7 +358,14 @@ mod tests {
                 content: "Hello".to_string(),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
-            model: Some(Models::O4Mini),
+            selected_model: Some("gpt-4o-mini".to_string()),
+            available_models: vec![AvailableModel {
+                model: Model {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
+                },
+                client: Clients::OpenAI,
+            }],
         };
 
         let response = Action::ResponseReceived(Ok("Hi there!".to_string()));
@@ -268,7 +386,14 @@ mod tests {
                 content: "Hello".to_string(),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
-            model: Some(Models::O4Mini),
+            selected_model: Some("gpt-4o-mini".to_string()),
+            available_models: vec![AvailableModel {
+                model: Model {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
+                },
+                client: Clients::OpenAI,
+            }],
         };
 
         let response = Action::ResponseReceived(Err("Error occurred".to_string()));
@@ -281,11 +406,11 @@ mod tests {
     #[test]
     fn test_model_selection() {
         let mut state = State::default();
-        let model = Models::O4Mini;
+        let model_name = "gpt-4o-mini".to_string();
 
-        let action = Action::ModelSelected(model.clone());
+        let action = Action::ModelSelected(model_name.clone());
         let _ = state.update(action);
 
-        assert_eq!(state.model, Some(model));
+        assert_eq!(state.selected_model, Some(model_name));
     }
 }

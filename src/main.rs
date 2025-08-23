@@ -7,7 +7,7 @@ pub fn main() -> iced::Result {
         .expect("Failed to initialize logger");
     iced::application("Ergon", ergon::update, ergon::view)
         .theme(theme)
-        .run()
+        .run_with(ergon::init)
 }
 
 fn theme(state: &Ergon) -> iced::Theme {
