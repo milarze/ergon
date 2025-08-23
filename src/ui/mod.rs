@@ -3,7 +3,6 @@ use iced::{
     Element, Task,
 };
 
-
 mod chat;
 mod settings;
 
@@ -13,14 +12,12 @@ pub fn init() -> (Ergon, Task<Message>) {
     Ergon::new()
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Ergon {
     current_page: PageId,
     chat: chat::State,
     pub settings: settings::State,
 }
-
 
 impl Ergon {
     pub fn new() -> (Self, Task<Message>) {
@@ -66,7 +63,7 @@ pub fn update(state: &mut Ergon, action: Message) -> Task<Message> {
     }
 }
 
-pub fn view(state: &Ergon) -> Element<Message> {
+pub fn view(state: &Ergon) -> Element<'_, Message> {
     let navigation = build_navigation_bar(&state.current_page);
 
     let page_content = match &state.current_page {
