@@ -59,10 +59,8 @@ impl State {
                     self.messages.push(user_message);
 
                     if let Some(model_name) = &self.selected_model {
-                        if let Some(model) = self
-                            .available_models
-                            .iter()
-                            .find(|m| &m.model.name == model_name)
+                        if let Some(model) =
+                            get_model_manager().find_model(model_name).unwrap_or(None)
                         {
                             Task::perform(
                                 complete_message(

@@ -12,6 +12,7 @@ pub struct Initialize {
     pub params: InitializeParams,
 }
 
+#[allow(dead_code)]
 impl Initialize {
     pub fn new(params: InitializeParams) -> Self {
         Initialize {
