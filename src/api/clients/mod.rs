@@ -5,6 +5,7 @@ use crate::ui::ChatMessage;
 
 pub mod anthropic;
 pub mod openai;
+pub mod vllm;
 
 pub trait ErgonClient {
     async fn complete_message(
@@ -20,6 +21,7 @@ pub trait ErgonClient {
 pub enum Clients {
     OpenAI,
     Anthropic,
+    Vllm,
 }
 
 impl Clients {
@@ -36,6 +38,11 @@ impl Clients {
             }
             Clients::Anthropic => {
                 anthropic::AnthropicClient::default()
+                    .complete_message(messages, model)
+                    .await
+            }
+            Clients::Vllm => {
+                vllm::VllmClient::default()
                     .complete_message(messages, model)
                     .await
             }
@@ -97,6 +104,21 @@ impl ModelManager {
             }
             Err(e) => {
                 log::warn!("Failed to fetch Anthropic models: {}", e);
+            }
+        }
+
+        let vllm_client = vllm::VllmClient::default();
+        match vllm_client.list_models().await {
+            Ok(models) => {
+                for model in models {
+                    all_models.push(AvailableModel {
+                        model,
+                        client: Clients::Vllm, // Assuming vLLM uses OpenAI client type
+                    });
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch vLLM models: {}", e);
             }
         }
 

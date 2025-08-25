@@ -36,11 +36,27 @@ impl Default for AnthropicConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VllmConfig {
+    pub endpoint: String,
+    pub model: String,
+}
+
+impl Default for VllmConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: "https://localhost:8000/v1/".to_string(),
+            model: "google/gemma-3-270m".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
     pub openai: OpenAIConfig,
     pub anthropic: AnthropicConfig,
+    pub vllm: VllmConfig,
     pub settings_file: String,
 }
 
@@ -52,6 +68,7 @@ impl Config {
                 theme: Theme::default(),
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
+                vllm: VllmConfig::default(),
                 settings_file: settings_file_path.clone(),
             };
             let settings_json = serde_json::to_string(&default_settings).unwrap();
@@ -68,6 +85,7 @@ impl Config {
                     theme: Theme::default(),
                     openai: OpenAIConfig::default(),
                     anthropic: AnthropicConfig::default(),
+                    vllm: VllmConfig::default(),
                     settings_file: settings_file_path.clone(),
                 }
             }
@@ -76,6 +94,7 @@ impl Config {
                 theme: Theme::default(),
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
+                vllm: VllmConfig::default(),
                 settings_file: settings_file_path.clone(),
             }
         }
@@ -122,6 +141,7 @@ impl Serialize for Config {
         state.serialize_field("theme", theme_name)?;
         state.serialize_field("openai", &self.openai)?;
         state.serialize_field("anthropic", &self.anthropic)?;
+        state.serialize_field("vllm", &self.vllm)?;
         state.end()
     }
 }
@@ -135,6 +155,7 @@ impl<'de> Deserialize<'de> for Config {
             Theme,
             OpenAI,
             Anthropic,
+            Vllm,
         }
 
         impl<'de> Deserialize<'de> for Fields {
@@ -159,6 +180,7 @@ impl<'de> Deserialize<'de> for Config {
                             "theme" => Ok(Fields::Theme),
                             "openai" => Ok(Fields::OpenAI),
                             "anthropic" => Ok(Fields::Anthropic),
+                            "vllm" => Ok(Fields::Vllm),
                             _ => Err(E::unknown_field(value, &["theme", "openai"])),
                         }
                     }
@@ -183,6 +205,7 @@ impl<'de> Deserialize<'de> for Config {
                 let mut theme = None;
                 let mut openai = None;
                 let mut anthropic = None;
+                let mut vllm = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -215,16 +238,26 @@ impl<'de> Deserialize<'de> for Config {
                                 .map_err(serde::de::Error::custom)?,
                             );
                         }
+                        Fields::Vllm => {
+                            let vllm_map =
+                                map.next_value::<serde_json::Map<String, serde_json::Value>>()?;
+                            vllm = Some(
+                                VllmConfig::deserialize(serde_json::Value::Object(vllm_map))
+                                    .map_err(serde::de::Error::custom)?,
+                            );
+                        }
                     }
                 }
 
                 let theme = theme.ok_or_else(|| serde::de::Error::missing_field("theme"))?;
                 let openai = openai.unwrap_or_default();
                 let anthropic = anthropic.unwrap_or_default();
+                let vllm = vllm.unwrap_or_default();
                 Ok(Config {
                     theme,
                     openai,
                     anthropic,
+                    vllm,
                     settings_file: Config::settings_file_path(),
                 })
             }
@@ -250,6 +283,7 @@ mod tests {
             theme: Theme::Dark,
             openai: OpenAIConfig::default(),
             anthropic: AnthropicConfig::default(),
+            vllm: VllmConfig::default(),
             settings_file: "./test.json".to_string(),
         };
         let serialized = serde_json::to_string(&config).unwrap();
@@ -258,6 +292,9 @@ mod tests {
             .contains("\"openai\":{\"api_key\":\"\",\"endpoint\":\"https://api.openai.com/v1/\"}"));
         assert!(serialized.contains(
             "\"anthropic\":{\"api_key\":\"\",\"endpoint\":\"https://api.anthropic.com/v1/\",\"max_tokens\":1024}"
+        ));
+        assert!(serialized.contains(
+            "\"vllm\":{\"endpoint\":\"https://localhost:8000/v1/\",\"model\":\"google/gemma-3-270m\"}"
         ));
     }
 
@@ -305,5 +342,33 @@ mod tests {
         assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+    }
+
+    #[test]
+    fn test_deserialize_config_with_vllm() {
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "test_key");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "test_anthropic_key");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+        assert_eq!(config.anthropic.max_tokens, 1024);
+        assert_eq!(config.vllm.endpoint, "https://vllm.cluster.local/v1/");
+        assert_eq!(config.vllm.model, "google/gemma-3-270m");
+    }
+
+    #[test]
+    fn test_deserialize_config_without_vllm() {
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "test_key");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "test_anthropic_key");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+        assert_eq!(config.anthropic.max_tokens, 1024);
+        assert_eq!(config.vllm.endpoint, "https://localhost:8000/v1/");
+        assert_eq!(config.vllm.model, "google/gemma-3-270m");
     }
 }

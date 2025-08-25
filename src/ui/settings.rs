@@ -18,6 +18,8 @@ pub enum Action {
     ChangeAnthropicKey(String),
     ChangeAnthropicUrl(String),
     ChangeAnthropicMaxTokens(u32),
+    ChangeVllmUrl(String),
+    ChangeVllmModel(String),
     SaveSettings,
 }
 
@@ -42,6 +44,12 @@ impl State {
             Action::ChangeAnthropicMaxTokens(max_tokens) => {
                 self.config.anthropic.max_tokens = max_tokens;
             }
+            Action::ChangeVllmUrl(endpoint) => {
+                self.config.vllm.endpoint = endpoint;
+            }
+            Action::ChangeVllmModel(model) => {
+                self.config.vllm.model = model;
+            }
             Action::SaveSettings => {
                 self.config.update_settings();
             }
@@ -53,6 +61,7 @@ impl State {
             self.theme_view(),
             self.openai_view(),
             self.anthropic_view(),
+            self.vllm_view(),
             button("Save Settings").on_press(Action::SaveSettings)
         ]
         .spacing(20)
@@ -104,11 +113,23 @@ impl State {
         .spacing(10)
         .align_y(Alignment::Center)
     }
+
+    fn vllm_view(&self) -> iced::widget::Row<'_, Action> {
+        row![
+            text("vLLM Endpoint:"),
+            text_input("Enter Endpoint", &self.config.vllm.endpoint)
+                .on_input(Action::ChangeVllmUrl),
+            text("Model:"),
+            text_input("Enter Model", &self.config.vllm.model).on_input(Action::ChangeVllmModel),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{AnthropicConfig, OpenAIConfig};
+    use crate::config::{AnthropicConfig, OpenAIConfig, VllmConfig};
 
     use super::*;
 
@@ -162,6 +183,22 @@ mod tests {
     }
 
     #[test]
+    fn test_update_vllm_url() {
+        let mut state = State::default();
+        state.update(Action::ChangeVllmUrl(
+            "http://new.vllm.endpoint.com".to_string(),
+        ));
+        assert_eq!(state.config.vllm.endpoint, "http://new.vllm.endpoint.com");
+    }
+
+    #[test]
+    fn test_update_vllm_model() {
+        let mut state = State::default();
+        state.update(Action::ChangeVllmModel("new-model".to_string()));
+        assert_eq!(state.config.vllm.model, "new-model");
+    }
+
+    #[test]
     fn test_save_settings() {
         let mut state = State {
             config: Config {
@@ -174,6 +211,10 @@ mod tests {
                     api_key: String::new(),
                     endpoint: "https://api.anthropic.com/v1/".to_string(),
                     max_tokens: 1024,
+                },
+                vllm: VllmConfig {
+                    endpoint: "http://localhost:8000/v1/".to_string(),
+                    model: "google/gemma-3-270m".to_string(),
                 },
                 settings_file: "./test.json".to_string(),
             },
@@ -198,5 +239,7 @@ mod tests {
             "https://api.anthropic.com/v1/"
         );
         assert_eq!(state.config.anthropic.max_tokens, 1024);
+        assert_eq!(state.config.vllm.endpoint, "http://localhost:8000/v1/");
+        assert_eq!(state.config.vllm.model, "google/gemma-3-270m");
     }
 }
