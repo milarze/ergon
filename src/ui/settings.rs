@@ -216,6 +216,7 @@ mod tests {
                     endpoint: "http://localhost:8000/v1/".to_string(),
                     model: "google/gemma-3-270m".to_string(),
                 },
+                mcp_configs: vec![],
                 settings_file: "./test.json".to_string(),
             },
         };
