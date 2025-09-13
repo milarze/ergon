@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use iced::Theme;
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -51,13 +53,13 @@ impl Default for VllmConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct McpStdioConfig {
     pub command: String,
     pub args: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct McpStreamableHttpConfig {
     pub endpoint: String,
 }
@@ -66,6 +68,24 @@ pub struct McpStreamableHttpConfig {
 pub enum McpConfig {
     Stdio(McpStdioConfig),
     StreamableHttp(McpStreamableHttpConfig),
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        McpConfig::Stdio(McpStdioConfig {
+            command: "".to_string(),
+            args: vec![],
+        })
+    }
+}
+
+impl Display for McpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpConfig::Stdio(_) => write!(f, "Stdio"),
+            McpConfig::StreamableHttp(_) => write!(f, "StreamableHttp"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +107,7 @@ impl Config {
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
-                mcp_configs: vec![],
+                mcp_configs: vec![McpConfig::default()],
                 settings_file: settings_file_path.clone(),
             };
             let settings_json = serde_json::to_string(&default_settings).unwrap();
@@ -105,7 +125,7 @@ impl Config {
                     openai: OpenAIConfig::default(),
                     anthropic: AnthropicConfig::default(),
                     vllm: VllmConfig::default(),
-                    mcp_configs: vec![],
+                    mcp_configs: vec![McpConfig::default()],
                     settings_file: settings_file_path.clone(),
                 }
             }
@@ -115,7 +135,7 @@ impl Config {
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
-                mcp_configs: vec![],
+                mcp_configs: vec![McpConfig::default()],
                 settings_file: settings_file_path.clone(),
             }
         }
@@ -163,6 +183,7 @@ impl Serialize for Config {
         state.serialize_field("openai", &self.openai)?;
         state.serialize_field("anthropic", &self.anthropic)?;
         state.serialize_field("vllm", &self.vllm)?;
+        state.serialize_field("mcp", &self.mcp_configs)?;
         state.end()
     }
 }
@@ -320,7 +341,7 @@ mod tests {
             openai: OpenAIConfig::default(),
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
-            mcp_configs: vec![],
+            mcp_configs: vec![McpConfig::default()],
             settings_file: "./test.json".to_string(),
         };
         let serialized = serde_json::to_string(&config).unwrap();
@@ -333,7 +354,7 @@ mod tests {
         assert!(serialized.contains(
             "\"vllm\":{\"endpoint\":\"https://localhost:8000/v1/\",\"model\":\"google/gemma-3-270m\"}"
         ));
-        assert!(!serialized.contains("\"mcp\":[]"));
+        assert!(serialized.contains("\"mcp\":[{\"Stdio\":{\"command\":\"\",\"args\":[]}}]"));
     }
 
     #[test]

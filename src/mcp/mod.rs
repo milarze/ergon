@@ -1,33 +1,27 @@
 use crate::config::McpConfig;
+use anyhow::Result;
 use rmcp::{
-    model::CallToolRequestParam,
-    service::ServiceExt,
-    transport::{ConfigureCommandExt, TokioChildProcess},
-    RmcpError,
+    service::{RunningService, ServiceExt},
+    transport::{ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess},
+    RoleClient,
 };
 use tokio::process::Command;
 
+pub type McpClient = RunningService<RoleClient, ()>;
+
 #[allow(dead_code)]
-pub async fn init(_config: McpConfig) -> Result<(), RmcpError> {
-    let client = ()
-        .serve(
-            TokioChildProcess::new(Command::new("uvx").configure(|cmd| {
-                cmd.arg("mcp-server-git");
-            }))
-            .map_err(RmcpError::transport_creation::<TokioChildProcess>)?,
-        )
-        .await?;
-    let server_info = client.peer_info();
-    log::info!("Connected to server: {:?}", server_info);
-    let tools = client.list_tools(Default::default()).await?;
-    log::info!("Available tools: {:?}", tools);
-    let tool_result = client
-        .call_tool(CallToolRequestParam {
-            name: "git_status".into(),
-            arguments: serde_json::json!({ "repo_path": "." }).as_object().cloned(),
-        })
-        .await?;
-    log::info!("Tool result: {:?}", tool_result);
-    client.cancel().await?;
-    Ok(())
+pub async fn init(config: McpConfig) -> Result<RunningService<RoleClient, ()>> {
+    let client = match config {
+        McpConfig::Stdio(cfg) => {
+            let transport = TokioChildProcess::new(Command::new(cfg.command).configure(|cmd| {
+                cmd.args(cfg.args);
+            }))?;
+            ().serve(transport).await?
+        }
+        McpConfig::StreamableHttp(server_config) => {
+            let transport = StreamableHttpClientTransport::from_uri(server_config.endpoint);
+            ().serve(transport).await?
+        }
+    };
+    Ok(client)
 }

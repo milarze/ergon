@@ -1,8 +1,27 @@
-use iced::widget::{button, column, container, row, text, text_input};
+use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Alignment, Element, Length, Theme};
 use iced_aw::number_input;
 
-use crate::config::Config;
+use crate::config::{Config, McpConfig, McpStdioConfig, McpStreamableHttpConfig};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpConfigType {
+    Stdio,
+    StreamableHttp,
+}
+
+impl std::fmt::Display for McpConfigType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpConfigType::Stdio => write!(f, "Stdio"),
+            McpConfigType::StreamableHttp => write!(f, "Streamable HTTP"),
+        }
+    }
+}
+
+impl McpConfigType {
+    const ALL: [McpConfigType; 2] = [McpConfigType::Stdio, McpConfigType::StreamableHttp];
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
@@ -20,6 +39,12 @@ pub enum Action {
     ChangeAnthropicMaxTokens(u32),
     ChangeVllmUrl(String),
     ChangeVllmModel(String),
+    AddMcpConfig,
+    ChangeMcpConfigType(usize, bool), // index, true for Stdio, false for StreamableHttp
+    ChangeMcpStdioCommand(usize, String),
+    ChangeMcpStdioArgs(usize, String), // comma-separated args string
+    ChangeMcpHttpEndpoint(usize, String),
+    RemoveMcpConfig(usize),
     SaveSettings,
 }
 
@@ -50,6 +75,46 @@ impl State {
             Action::ChangeVllmModel(model) => {
                 self.config.vllm.model = model;
             }
+            Action::AddMcpConfig => {
+                self.config.mcp_configs.push(McpConfig::default());
+            }
+            Action::ChangeMcpConfigType(index, is_stdio) => {
+                if let Some(config) = self.config.mcp_configs.get_mut(index) {
+                    *config = if is_stdio {
+                        McpConfig::Stdio(McpStdioConfig::default())
+                    } else {
+                        McpConfig::StreamableHttp(McpStreamableHttpConfig::default())
+                    };
+                }
+            }
+            Action::ChangeMcpStdioCommand(index, command) => {
+                if let Some(McpConfig::Stdio(stdio_config)) = self.config.mcp_configs.get_mut(index)
+                {
+                    stdio_config.command = command;
+                }
+            }
+            Action::ChangeMcpStdioArgs(index, args_str) => {
+                if let Some(McpConfig::Stdio(stdio_config)) = self.config.mcp_configs.get_mut(index)
+                {
+                    stdio_config.args = args_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            Action::ChangeMcpHttpEndpoint(index, endpoint) => {
+                if let Some(McpConfig::StreamableHttp(http_config)) =
+                    self.config.mcp_configs.get_mut(index)
+                {
+                    http_config.endpoint = endpoint;
+                }
+            }
+            Action::RemoveMcpConfig(index) => {
+                if index < self.config.mcp_configs.len() {
+                    self.config.mcp_configs.remove(index);
+                }
+            }
             Action::SaveSettings => {
                 self.config.update_settings();
             }
@@ -62,6 +127,7 @@ impl State {
             self.openai_view(),
             self.anthropic_view(),
             self.vllm_view(),
+            self.mcp_configs_view(),
             button("Save Settings").on_press(Action::SaveSettings)
         ]
         .spacing(20)
@@ -124,6 +190,67 @@ impl State {
         ]
         .spacing(10)
         .align_y(Alignment::Center)
+    }
+
+    fn mcp_configs_view(&self) -> iced::widget::Column<'_, Action> {
+        let mut column = column![text("MCP Servers:").size(18)];
+
+        for (index, mcp_config) in self.config.mcp_configs.iter().enumerate() {
+            let config_type = match mcp_config {
+                McpConfig::Stdio(_) => McpConfigType::Stdio,
+                McpConfig::StreamableHttp(_) => McpConfigType::StreamableHttp,
+            };
+
+            let type_picker = pick_list(
+                &McpConfigType::ALL[..],
+                Some(config_type),
+                move |selected_type| {
+                    Action::ChangeMcpConfigType(
+                        index,
+                        matches!(selected_type, McpConfigType::Stdio),
+                    )
+                },
+            );
+
+            let config_fields = match mcp_config {
+                McpConfig::Stdio(stdio_config) => {
+                    let args_str = stdio_config.args.join(", ");
+                    row![
+                        text("Command:"),
+                        text_input("Enter command", &stdio_config.command)
+                            .on_input(move |cmd| Action::ChangeMcpStdioCommand(index, cmd)),
+                        text("Args:"),
+                        text_input("comma,separated,args", &args_str)
+                            .on_input(move |args| Action::ChangeMcpStdioArgs(index, args)),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                }
+                McpConfig::StreamableHttp(http_config) => row![
+                    text("Endpoint:"),
+                    text_input("Enter endpoint URL", &http_config.endpoint)
+                        .on_input(move |endpoint| Action::ChangeMcpHttpEndpoint(index, endpoint)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            };
+
+            column = column.push(
+                row![
+                    text(format!("Config {}:", index + 1)),
+                    type_picker,
+                    config_fields,
+                    button("Remove").on_press(Action::RemoveMcpConfig(index))
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            );
+        }
+
+        column
+            .push(button("Add MCP Config").on_press(Action::AddMcpConfig))
+            .spacing(10)
+            .align_x(Alignment::Center)
     }
 }
 
