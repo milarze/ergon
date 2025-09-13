@@ -8,6 +8,8 @@ mod settings;
 
 pub use chat::{ChatMessage, Sender};
 
+use crate::{config::McpConfig, mcp::McpClient};
+
 pub fn init() -> (Ergon, Task<Message>) {
     Ergon::new()
 }
@@ -17,15 +19,18 @@ pub struct Ergon {
     current_page: PageId,
     chat: chat::State,
     pub settings: settings::State,
+    mcp_clients: Vec<McpClient>,
 }
 
 impl Ergon {
     pub fn new() -> (Self, Task<Message>) {
         let (chat_state, chat_task) = chat::State::new();
+        let settings = settings::State::default();
         let state = Self {
             current_page: PageId::default(),
             chat: chat_state,
-            settings: settings::State::default(),
+            settings: settings.clone(),
+            mcp_clients: initialize_mcp_clients(settings.config.mcp_configs),
         };
         let task = chat_task.map(Message::Chat);
         (state, task)
@@ -92,4 +97,24 @@ fn build_navigation_bar(current_page: &PageId) -> Element<'static, Message> {
     ]
     .spacing(10)
     .into()
+}
+
+fn initialize_mcp_clients(mcp_configs: Vec<McpConfig>) -> Vec<McpClient> {
+    mcp_configs
+        .iter()
+        .map(|config| tokio::spawn(crate::mcp::init(config.clone())))
+        .filter_map(
+            |handle| match tokio::runtime::Handle::current().block_on(handle) {
+                Ok(Ok(client)) => Some(client),
+                Ok(Err(e)) => {
+                    eprintln!("Failed to initialize MCP client: {}", e);
+                    None
+                }
+                Err(e) => {
+                    eprintln!("Task join error: {}", e);
+                    None
+                }
+            },
+        )
+        .collect()
 }
