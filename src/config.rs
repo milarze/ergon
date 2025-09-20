@@ -51,12 +51,30 @@ impl Default for VllmConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpStdioConfig {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpStreamableHttpConfig {
+    pub endpoint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum McpConfig {
+    Stdio(McpStdioConfig),
+    StreamableHttp(McpStreamableHttpConfig),
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
     pub openai: OpenAIConfig,
     pub anthropic: AnthropicConfig,
     pub vllm: VllmConfig,
+    pub mcp_configs: Vec<McpConfig>,
     pub settings_file: String,
 }
 
@@ -69,6 +87,7 @@ impl Config {
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
+                mcp_configs: vec![],
                 settings_file: settings_file_path.clone(),
             };
             let settings_json = serde_json::to_string(&default_settings).unwrap();
@@ -86,6 +105,7 @@ impl Config {
                     openai: OpenAIConfig::default(),
                     anthropic: AnthropicConfig::default(),
                     vllm: VllmConfig::default(),
+                    mcp_configs: vec![],
                     settings_file: settings_file_path.clone(),
                 }
             }
@@ -95,6 +115,7 @@ impl Config {
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
+                mcp_configs: vec![],
                 settings_file: settings_file_path.clone(),
             }
         }
@@ -156,6 +177,7 @@ impl<'de> Deserialize<'de> for Config {
             OpenAI,
             Anthropic,
             Vllm,
+            McpConfigs,
         }
 
         impl<'de> Deserialize<'de> for Fields {
@@ -181,6 +203,7 @@ impl<'de> Deserialize<'de> for Config {
                             "openai" => Ok(Fields::OpenAI),
                             "anthropic" => Ok(Fields::Anthropic),
                             "vllm" => Ok(Fields::Vllm),
+                            "mcp" => Ok(Fields::McpConfigs),
                             _ => Err(E::unknown_field(value, &["theme", "openai"])),
                         }
                     }
@@ -206,6 +229,7 @@ impl<'de> Deserialize<'de> for Config {
                 let mut openai = None;
                 let mut anthropic = None;
                 let mut vllm = None;
+                let mut mcp_configs = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -246,6 +270,16 @@ impl<'de> Deserialize<'de> for Config {
                                     .map_err(serde::de::Error::custom)?,
                             );
                         }
+                        Fields::McpConfigs => {
+                            let mcp_configs_vec = map.next_value::<Vec<serde_json::Value>>()?;
+                            let mut configs = Vec::new();
+                            for mcp_value in mcp_configs_vec {
+                                let mcp_config = McpConfig::deserialize(mcp_value)
+                                    .map_err(serde::de::Error::custom)?;
+                                configs.push(mcp_config);
+                            }
+                            mcp_configs = Some(configs);
+                        }
                     }
                 }
 
@@ -253,11 +287,13 @@ impl<'de> Deserialize<'de> for Config {
                 let openai = openai.unwrap_or_default();
                 let anthropic = anthropic.unwrap_or_default();
                 let vllm = vllm.unwrap_or_default();
+                let mcp_configs = mcp_configs.unwrap_or_default();
                 Ok(Config {
                     theme,
                     openai,
                     anthropic,
                     vllm,
+                    mcp_configs,
                     settings_file: Config::settings_file_path(),
                 })
             }
@@ -284,6 +320,7 @@ mod tests {
             openai: OpenAIConfig::default(),
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
+            mcp_configs: vec![],
             settings_file: "./test.json".to_string(),
         };
         let serialized = serde_json::to_string(&config).unwrap();
@@ -296,6 +333,7 @@ mod tests {
         assert!(serialized.contains(
             "\"vllm\":{\"endpoint\":\"https://localhost:8000/v1/\",\"model\":\"google/gemma-3-270m\"}"
         ));
+        assert!(!serialized.contains("\"mcp\":[]"));
     }
 
     #[test]
@@ -370,5 +408,48 @@ mod tests {
         assert_eq!(config.anthropic.max_tokens, 1024);
         assert_eq!(config.vllm.endpoint, "https://localhost:8000/v1/");
         assert_eq!(config.vllm.model, "google/gemma-3-270m");
+    }
+
+    #[test]
+    fn test_deserialize_config_with_mcp() {
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"endpoint":"http://localhost:9000/v1/"}}]}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "test_key");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "test_anthropic_key");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+        assert_eq!(config.anthropic.max_tokens, 1024);
+        assert_eq!(config.vllm.endpoint, "https://vllm.cluster.local/v1/");
+        assert_eq!(config.vllm.model, "google/gemma-3-270m");
+        assert_eq!(config.mcp_configs.len(), 2);
+        match &config.mcp_configs[0] {
+            McpConfig::Stdio(stdio_config) => {
+                assert_eq!(stdio_config.command, "python3");
+                assert_eq!(stdio_config.args, vec!["-u", "mcp_stdio.py"]);
+            }
+            _ => panic!("Expected Stdio config"),
+        }
+        match &config.mcp_configs[1] {
+            McpConfig::StreamableHttp(http_config) => {
+                assert_eq!(http_config.endpoint, "http://localhost:9000/v1/");
+            }
+            _ => panic!("Expected StreamableHttp config"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_config_without_mcp() {
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.openai.api_key, "test_key");
+        assert_eq!(config.openai.endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.anthropic.api_key, "test_anthropic_key");
+        assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
+        assert_eq!(config.anthropic.max_tokens, 1024);
+        assert_eq!(config.vllm.endpoint, "https://vllm.cluster.local/v1/");
+        assert_eq!(config.vllm.model, "google/gemma-3-270m");
+        assert!(config.mcp_configs.is_empty());
     }
 }
