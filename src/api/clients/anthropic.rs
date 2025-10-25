@@ -2,7 +2,7 @@
 
 use crate::{
     config::{AnthropicConfig, Config},
-    models::{CompletionRequest, CompletionResponse},
+    models::{Choice, CompletionRequest, CompletionResponse, Message},
 };
 
 use super::{ErgonClient, Model};
@@ -34,10 +34,13 @@ impl AnthropicClient {
             log::error!("OpenAIClient: Request failed with error: {}", error_text);
             return Err(anyhow::anyhow!("Error: {}", error_text));
         }
+        log::info!(
+            "AnthropicClient: Request successful with status: {}",
+            response.status()
+        );
         let text_data = response.text().await?;
-        let completion_response: CompletionResponse = serde_json::from_str(&text_data)
-            .map_err(anyhow::Error::from)
-            .unwrap();
+        log::info!("AnthropicClient: Response data: {}", text_data);
+        let completion_response: CompletionResponse = self.deserialize_response(text_data)?;
         Ok(completion_response)
     }
 
@@ -103,11 +106,68 @@ impl AnthropicClient {
             serde_json::Value::Object(mut map) => {
                 map.insert(
                     "max_tokens".to_string(),
-                    serde_json::Value::String(self.config.max_tokens.to_string()),
+                    serde_json::Value::Number(self.config.max_tokens.into()),
                 );
                 Ok(serde_json::Value::Object(map))
             }
             _ => Err(anyhow::anyhow!("Invalid request format")),
+        }
+    }
+
+    fn deserialize_response(&self, response_text: String) -> anyhow::Result<CompletionResponse> {
+        let parsed_json: serde_json::Value =
+            serde_json::from_str(&response_text).map_err(anyhow::Error::from)?;
+        Ok(CompletionResponse {
+            id: parsed_json
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            object: parsed_json
+                .get("object")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            created: parsed_json
+                .get("created")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default(),
+            model: parsed_json
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            choices: vec![Choice {
+                index: 0,
+                messages: parsed_json
+                    .get("content")
+                    .and_then(|v| self.deserialize_content(v).ok())
+                    .unwrap_or_default(),
+                finish_reason: parsed_json
+                    .get("stop_reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            }],
+        })
+    }
+
+    fn deserialize_content(&self, content: &serde_json::Value) -> anyhow::Result<Vec<Message>> {
+        if let serde_json::Value::Array(arr) = content {
+            let messages = arr
+                .into_iter()
+                .map(|msg| {
+                    Message::assistant(
+                        msg.get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                    )
+                })
+                .collect();
+            Ok(messages)
+        } else {
+            Err(anyhow::anyhow!("Invalid content format"))
         }
     }
 }

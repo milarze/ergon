@@ -80,7 +80,7 @@ pub struct CompletionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Choice {
     pub index: u32,
-    pub message: Message,
+    pub messages: Vec<Message>,
     pub finish_reason: String,
 }
 
