@@ -109,17 +109,21 @@ impl State {
             }
             Action::ResponseReceived(response) => {
                 log::info!("Response received: {:?}", response);
-                let message = if !response.choices.is_empty() {
-                    response.choices[0].message.content.clone()
+                let messages = if !response.choices.is_empty() {
+                    response.choices[0]
+                        .messages
+                        .iter()
+                        .map(|m| m.content.clone())
+                        .collect()
                 } else {
-                    "Error: No response from model.".to_string()
+                    vec!["Error: No response from model.".to_string()]
                 };
-                let bot_message = ChatMessage {
+                let bot_messages = messages.into_iter().map(|content| ChatMessage {
                     sender: Sender::Bot,
-                    content: message.clone(),
-                    markdown_items: markdown::parse(&message).collect(),
-                };
-                self.messages.push(bot_message);
+                    markdown_items: markdown::parse(&content).collect(),
+                    content,
+                });
+                self.messages.append(&mut bot_messages.collect::<Vec<_>>());
                 self.input_value.clear();
                 Task::none()
             }
