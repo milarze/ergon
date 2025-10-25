@@ -113,7 +113,7 @@ impl State {
                     response.choices[0]
                         .messages
                         .iter()
-                        .map(|m| m.content.clone())
+                        .map(|m| m.content.body.clone())
                         .collect()
                 } else {
                     vec!["Error: No response from model.".to_string()]

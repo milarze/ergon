@@ -20,7 +20,7 @@ pub struct ModelInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
     pub role: String,
-    pub content: String,
+    pub content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 }
@@ -29,7 +29,7 @@ impl Message {
     pub fn system(content: impl ToString) -> Self {
         Self {
             role: "system".to_string(),
-            content: content.to_string(),
+            content: Content::text(content),
             tool_calls: None,
         }
     }
@@ -37,7 +37,7 @@ impl Message {
     pub fn user(content: impl ToString) -> Self {
         Self {
             role: "user".to_string(),
-            content: content.to_string(),
+            content: Content::text(content),
             tool_calls: None,
         }
     }
@@ -45,7 +45,7 @@ impl Message {
     pub fn assistant(content: impl ToString) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: content.to_string(),
+            content: Content::text(content),
             tool_calls: None,
         }
     }
@@ -103,7 +103,7 @@ pub struct ToolResult {
     pub contents: Vec<Content>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Content {
     pub content_type: String,
     pub body: String,
