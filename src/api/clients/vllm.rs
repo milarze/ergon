@@ -3,7 +3,6 @@
 use crate::{
     config::{Config, VllmConfig},
     models::{CompletionRequest, CompletionResponse},
-    ui::ChatMessage,
 };
 
 use super::{ErgonClient, Model};
@@ -37,31 +36,6 @@ impl VllmClient {
             .map_err(anyhow::Error::from)
             .unwrap();
         Ok(completion_response)
-    }
-
-    fn serialize_messages(
-        &self,
-        messages: Vec<ChatMessage>,
-        model: &str,
-    ) -> Result<serde_json::Value, String> {
-        let msgs: Vec<serde_json::Value> = messages
-            .into_iter()
-            .map(|m| {
-                let role = match m.sender {
-                    crate::ui::Sender::User => "user",
-                    crate::ui::Sender::Bot => "assistant",
-                };
-                serde_json::json!({
-                    "role": role,
-                    "content": m.content,
-                })
-            })
-            .collect();
-        let data = serde_json::json!({
-            "model": model,
-            "messages": msgs,
-        });
-        Ok(data)
     }
 }
 

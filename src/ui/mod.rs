@@ -6,8 +6,6 @@ use iced::{
 mod chat;
 mod settings;
 
-pub use chat::{ChatMessage, Sender};
-
 use crate::{config::McpConfig, mcp::McpClient};
 
 pub fn init() -> (Ergon, Task<Message>) {
@@ -19,6 +17,7 @@ pub struct Ergon {
     current_page: PageId,
     chat: chat::State,
     pub settings: settings::State,
+    #[allow(dead_code)]
     mcp_clients: Vec<McpClient>,
 }
 

@@ -2,10 +2,7 @@ use crate::config::McpConfig;
 use anyhow::Result;
 use rmcp::{
     service::{RunningService, ServiceExt},
-    transport::{
-        streamable_http_client::StreamableHttpClientTransportConfig, ConfigureCommandExt,
-        StreamableHttpClientTransport, TokioChildProcess,
-    },
+    transport::{ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess},
     RoleClient,
 };
 use tokio::process::Command;

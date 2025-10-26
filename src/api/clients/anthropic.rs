@@ -155,7 +155,7 @@ impl AnthropicClient {
     fn deserialize_content(&self, content: &serde_json::Value) -> anyhow::Result<Vec<Message>> {
         if let serde_json::Value::Array(arr) = content {
             let messages = arr
-                .into_iter()
+                .iter()
                 .map(|msg| {
                     Message::assistant(
                         msg.get("text")

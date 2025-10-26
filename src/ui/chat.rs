@@ -1,6 +1,5 @@
 use crate::api::clients::{get_model_manager, Clients};
 use crate::models::{CompletionRequest, CompletionResponse, Message, ModelInfo};
-use anyhow::Result;
 use iced::widget::{
     button, column, container, markdown, pick_list, row, scrollable, text, text_input,
 };
@@ -21,11 +20,11 @@ pub struct ChatMessage {
     pub markdown_items: Vec<markdown::Item>,
 }
 
-impl Into<Message> for ChatMessage {
-    fn into(self) -> Message {
-        match self.sender {
-            Sender::User => Message::user(self.content),
-            Sender::Bot => Message::assistant(self.content),
+impl From<ChatMessage> for Message {
+    fn from(chat_message: ChatMessage) -> Self {
+        match chat_message.sender {
+            Sender::User => Message::user(chat_message.content),
+            Sender::Bot => Message::assistant(chat_message.content),
         }
     }
 }
@@ -283,6 +282,7 @@ fn build_input_area(state: &State) -> Element<'_, Action> {
 mod tests {
 
     use super::*;
+    use anyhow::Result;
     use iced::futures::executor::block_on;
 
     #[test]
