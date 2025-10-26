@@ -380,7 +380,17 @@ mod tests {
             }],
         };
 
-        let response = Action::ResponseReceived(Ok("Hi there!".to_string()));
+        let response = Action::ResponseReceived(CompletionResponse {
+            id: "resp1".to_string(),
+            object: "chat.completion".to_string(),
+            created: 0,
+            model: "gpt-4o-mini".to_string(),
+            choices: vec![crate::models::Choice {
+                index: 0,
+                messages: vec![crate::models::Message::assistant("Hi there!".to_string())],
+                finish_reason: "stop".to_string(),
+            }],
+        });
         let _ = state.update(response);
 
         assert_eq!(state.messages.len(), 2);
@@ -406,10 +416,18 @@ mod tests {
             }],
         };
 
-        let response = Action::ResponseReceived(Err("Error occurred".to_string()));
+        let response = Action::ResponseReceived(CompletionResponse {
+            id: "error".to_string(),
+            object: "chat.completion".to_string(),
+            created: 0,
+            model: "gpt-4o-mini".to_string(),
+            choices: vec![],
+        });
         let _ = state.update(response);
 
-        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages[1].sender, Sender::Bot);
+        assert_eq!(state.messages[1].content, "Error: No response from model.");
         assert!(state.input_value.is_empty());
     }
 
