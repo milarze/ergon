@@ -97,6 +97,7 @@ pub struct ToolFunction {
     pub arguments: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolResult {
     pub success: bool,
