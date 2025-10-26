@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
-use strum_macros::EnumIter;
 
-use crate::ui::ChatMessage;
+pub use crate::models::{Clients, CompletionRequest, CompletionResponse, ModelInfo};
 
 pub mod anthropic;
 pub mod openai;
@@ -10,42 +9,29 @@ pub mod vllm;
 pub trait ErgonClient {
     async fn complete_message(
         &self,
-        messages: Vec<ChatMessage>,
-        model: &str,
-    ) -> Result<String, String>;
+        request: CompletionRequest,
+    ) -> anyhow::Result<CompletionResponse>;
 
-    async fn list_models(&self) -> Result<Vec<Model>, String>;
-}
-
-#[derive(Debug, EnumIter, Clone)]
-pub enum Clients {
-    OpenAI,
-    Anthropic,
-    Vllm,
+    async fn list_models(&self) -> anyhow::Result<Vec<Model>>;
 }
 
 impl Clients {
     pub async fn complete_message(
         &self,
-        messages: Vec<ChatMessage>,
-        model: &str,
-    ) -> Result<String, String> {
+        request: CompletionRequest,
+    ) -> anyhow::Result<CompletionResponse> {
         match self {
             Clients::OpenAI => {
                 openai::OpenAIClient::default()
-                    .complete_message(messages, model)
+                    .complete_message(request)
                     .await
             }
             Clients::Anthropic => {
                 anthropic::AnthropicClient::default()
-                    .complete_message(messages, model)
+                    .complete_message(request)
                     .await
             }
-            Clients::Vllm => {
-                vllm::VllmClient::default()
-                    .complete_message(messages, model)
-                    .await
-            }
+            Clients::Vllm => vllm::VllmClient::default().complete_message(request).await,
         }
     }
 }
@@ -56,15 +42,9 @@ pub struct Model {
     pub id: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct AvailableModel {
-    pub model: Model,
-    pub client: Clients,
-}
-
 #[derive(Debug)]
 pub struct ModelManager {
-    models: Arc<RwLock<Vec<AvailableModel>>>,
+    models: Arc<RwLock<Vec<ModelInfo>>>,
 }
 
 impl ModelManager {
@@ -81,9 +61,10 @@ impl ModelManager {
         match openai_client.list_models().await {
             Ok(models) => {
                 for model in models {
-                    all_models.push(AvailableModel {
-                        model,
-                        client: Clients::OpenAI,
+                    all_models.push(ModelInfo {
+                        name: model.name,
+                        id: model.id,
+                        client: crate::models::Clients::OpenAI,
                     });
                 }
             }
@@ -96,9 +77,10 @@ impl ModelManager {
         match anthropic_client.list_models().await {
             Ok(models) => {
                 for model in models {
-                    all_models.push(AvailableModel {
-                        model,
-                        client: Clients::Anthropic,
+                    all_models.push(ModelInfo {
+                        name: model.name,
+                        id: model.id,
+                        client: crate::models::Clients::Anthropic,
                     });
                 }
             }
@@ -111,9 +93,10 @@ impl ModelManager {
         match vllm_client.list_models().await {
             Ok(models) => {
                 for model in models {
-                    all_models.push(AvailableModel {
-                        model,
-                        client: Clients::Vllm, // Assuming vLLM uses OpenAI client type
+                    all_models.push(ModelInfo {
+                        name: model.name,
+                        id: model.id,
+                        client: crate::models::Clients::Vllm, // Assuming vLLM uses OpenAI client type
                     });
                 }
             }
@@ -131,7 +114,7 @@ impl ModelManager {
         Ok(())
     }
 
-    pub fn get_models(&self) -> Result<Vec<AvailableModel>, String> {
+    pub fn get_models(&self) -> Result<Vec<ModelInfo>, String> {
         let models = self
             .models
             .read()
@@ -139,12 +122,12 @@ impl ModelManager {
         Ok(models.clone())
     }
 
-    pub fn find_model(&self, name: &str) -> Result<Option<AvailableModel>, String> {
+    pub fn find_model(&self, name: &str) -> Result<Option<ModelInfo>, String> {
         let models = self
             .models
             .read()
             .map_err(|_| "Failed to acquire read lock")?;
-        Ok(models.iter().find(|m| m.model.name == name).cloned())
+        Ok(models.iter().find(|m| m.name == name).cloned())
     }
 }
 
