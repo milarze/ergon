@@ -1,4 +1,5 @@
-use crate::api::clients::{get_model_manager, AvailableModel, Clients, Model};
+use crate::api::clients::{get_model_manager, Clients};
+use crate::models::{CompletionRequest, CompletionResponse, Message, ModelInfo};
 use iced::widget::{
     button, column, container, markdown, pick_list, row, scrollable, text, text_input,
 };
@@ -9,7 +10,7 @@ pub struct State {
     messages: Vec<ChatMessage>,
     input_value: String,
     selected_model: Option<String>,
-    available_models: Vec<AvailableModel>,
+    available_models: Vec<ModelInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -19,13 +20,22 @@ pub struct ChatMessage {
     pub markdown_items: Vec<markdown::Item>,
 }
 
+impl From<ChatMessage> for Message {
+    fn from(chat_message: ChatMessage) -> Self {
+        match chat_message.sender {
+            Sender::User => Message::user(chat_message.content),
+            Sender::Bot => Message::assistant(chat_message.content),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Action {
     InputChanged(String),
     SendMessage,
-    ResponseReceived(Result<String, String>),
+    ResponseReceived(CompletionResponse),
     ModelSelected(String),
-    ModelsLoaded(Vec<AvailableModel>),
+    ModelsLoaded(Vec<ModelInfo>),
     UrlClicked(String),
 }
 
@@ -66,7 +76,7 @@ impl State {
                                 complete_message(
                                     self.messages.clone(),
                                     model.client.clone(),
-                                    model.model.id.clone(),
+                                    model.id.clone(),
                                 ),
                                 Action::ResponseReceived,
                             )
@@ -98,16 +108,21 @@ impl State {
             }
             Action::ResponseReceived(response) => {
                 log::info!("Response received: {:?}", response);
-                if let Ok(message) = response {
-                    let bot_message = ChatMessage {
-                        sender: Sender::Bot,
-                        content: message.clone(),
-                        markdown_items: markdown::parse(&message).collect(),
-                    };
-                    self.messages.push(bot_message);
+                let messages = if !response.choices.is_empty() {
+                    response.choices[0]
+                        .messages
+                        .iter()
+                        .map(|m| m.content.body.clone())
+                        .collect()
                 } else {
-                    log::info!("Error receiving response: {:?}", response);
-                }
+                    vec!["Error: No response from model.".to_string()]
+                };
+                let bot_messages = messages.into_iter().map(|content| ChatMessage {
+                    sender: Sender::Bot,
+                    markdown_items: markdown::parse(&content).collect(),
+                    content,
+                });
+                self.messages.append(&mut bot_messages.collect::<Vec<_>>());
                 self.input_value.clear();
                 Task::none()
             }
@@ -120,7 +135,7 @@ impl State {
                 log::info!("Models loaded: {} models available", models.len());
                 self.available_models = models;
                 if self.selected_model.is_none() && !self.available_models.is_empty() {
-                    self.selected_model = Some(self.available_models[0].model.name.clone());
+                    self.selected_model = Some(self.available_models[0].name.clone());
                 }
                 Task::none()
             }
@@ -147,15 +162,27 @@ async fn complete_message(
     messages: Vec<ChatMessage>,
     client: Clients,
     model: String,
-) -> Result<String, String> {
-    let result = client.complete_message(messages, &model).await;
+) -> CompletionResponse {
+    let request = CompletionRequest {
+        messages: messages.iter().map(|m| m.clone().into()).collect(),
+        model,
+        temperature: None,
+        tools: None,
+    };
+    let result = client.complete_message(request).await;
     match result {
-        Ok(response) => Ok(response),
-        Err(err) => Err(err),
+        Ok(response) => response,
+        Err(err) => CompletionResponse {
+            id: "error".to_string(),
+            object: err.to_string(),
+            created: 0,
+            model: "".to_string(),
+            choices: vec![],
+        },
     }
 }
 
-async fn load_models() -> Vec<AvailableModel> {
+async fn load_models() -> Vec<ModelInfo> {
     let manager = get_model_manager();
     match manager.fetch_models().await {
         Ok(_) => {
@@ -164,18 +191,14 @@ async fn load_models() -> Vec<AvailableModel> {
                 Err(_) => {
                     // Fallback to hardcoded models
                     vec![
-                        AvailableModel {
-                            model: Model {
-                                name: "gpt-4o-mini".to_string(),
-                                id: "gpt-4o-mini".to_string(),
-                            },
+                        ModelInfo {
+                            name: "gpt-4o-mini".to_string(),
+                            id: "gpt-4o-mini".to_string(),
                             client: Clients::OpenAI,
                         },
-                        AvailableModel {
-                            model: Model {
-                                name: "Claude 3.5 Sonnet".to_string(),
-                                id: "claude-3-5-sonnet-20241022".to_string(),
-                            },
+                        ModelInfo {
+                            name: "Claude 3.5 Sonnet".to_string(),
+                            id: "claude-3-5-sonnet-20241022".to_string(),
                             client: Clients::Anthropic,
                         },
                     ]
@@ -185,18 +208,14 @@ async fn load_models() -> Vec<AvailableModel> {
         Err(_) => {
             // Fallback to hardcoded models
             vec![
-                AvailableModel {
-                    model: Model {
-                        name: "gpt-4o-mini".to_string(),
-                        id: "gpt-4o-mini".to_string(),
-                    },
+                ModelInfo {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
                     client: Clients::OpenAI,
                 },
-                AvailableModel {
-                    model: Model {
-                        name: "Claude 3.5 Sonnet".to_string(),
-                        id: "claude-3-5-sonnet-20241022".to_string(),
-                    },
+                ModelInfo {
+                    name: "Claude 3.5 Sonnet".to_string(),
+                    id: "claude-3-5-sonnet-20241022".to_string(),
                     client: Clients::Anthropic,
                 },
             ]
@@ -247,7 +266,7 @@ fn build_input_area(state: &State) -> Element<'_, Action> {
             state
                 .available_models
                 .iter()
-                .map(|m| m.model.name.clone())
+                .map(|m| m.name.clone())
                 .collect::<Vec<_>>(),
             state.selected_model.as_ref(),
             Action::ModelSelected
@@ -263,6 +282,7 @@ fn build_input_area(state: &State) -> Element<'_, Action> {
 mod tests {
 
     use super::*;
+    use anyhow::Result;
     use iced::futures::executor::block_on;
 
     #[test]
@@ -285,11 +305,9 @@ mod tests {
             input_value: "This is a test".to_string(),
             messages: vec![],
             selected_model: Some("gpt-4o-mini".to_string()),
-            available_models: vec![AvailableModel {
-                model: Model {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                },
+            available_models: vec![ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
         };
@@ -316,11 +334,9 @@ mod tests {
             input_value: "This is a test".to_string(),
             messages: vec![],
             selected_model: Some("gpt-4o-mini".to_string()),
-            available_models: vec![AvailableModel {
-                model: Model {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                },
+            available_models: vec![ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
         };
@@ -357,16 +373,24 @@ mod tests {
                 markdown_items: markdown::parse("Hello").collect(),
             }],
             selected_model: Some("gpt-4o-mini".to_string()),
-            available_models: vec![AvailableModel {
-                model: Model {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                },
+            available_models: vec![ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
         };
 
-        let response = Action::ResponseReceived(Ok("Hi there!".to_string()));
+        let response = Action::ResponseReceived(CompletionResponse {
+            id: "resp1".to_string(),
+            object: "chat.completion".to_string(),
+            created: 0,
+            model: "gpt-4o-mini".to_string(),
+            choices: vec![crate::models::Choice {
+                index: 0,
+                messages: vec![crate::models::Message::assistant("Hi there!".to_string())],
+                finish_reason: "stop".to_string(),
+            }],
+        });
         let _ = state.update(response);
 
         assert_eq!(state.messages.len(), 2);
@@ -385,19 +409,25 @@ mod tests {
                 markdown_items: markdown::parse("Hello").collect(),
             }],
             selected_model: Some("gpt-4o-mini".to_string()),
-            available_models: vec![AvailableModel {
-                model: Model {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                },
+            available_models: vec![ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
         };
 
-        let response = Action::ResponseReceived(Err("Error occurred".to_string()));
+        let response = Action::ResponseReceived(CompletionResponse {
+            id: "error".to_string(),
+            object: "chat.completion".to_string(),
+            created: 0,
+            model: "gpt-4o-mini".to_string(),
+            choices: vec![],
+        });
         let _ = state.update(response);
 
-        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.messages.len(), 2);
+        assert_eq!(state.messages[1].sender, Sender::Bot);
+        assert_eq!(state.messages[1].content, "Error: No response from model.");
         assert!(state.input_value.is_empty());
     }
 
