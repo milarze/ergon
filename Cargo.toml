@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.99"
-home = "0.5.11"
+home = "0.5.12"
 iced = { version = "0.13.1", features = ["markdown", "tokio"] }
 iced_aw = { version = "0.12.2", features = ["number_input"] }
 log = "0.4.28"
