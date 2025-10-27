@@ -20,7 +20,7 @@ pub struct ModelInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
     pub role: String,
-    pub content: Content,
+    pub content: Vec<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 }
@@ -29,7 +29,7 @@ impl Message {
     pub fn system(content: impl ToString) -> Self {
         Self {
             role: "system".to_string(),
-            content: Content::text(content),
+            content: vec![Content::text(content)],
             tool_calls: None,
         }
     }
@@ -37,7 +37,7 @@ impl Message {
     pub fn user(content: impl ToString) -> Self {
         Self {
             role: "user".to_string(),
-            content: Content::text(content),
+            content: vec![Content::text(content)],
             tool_calls: None,
         }
     }
@@ -45,7 +45,7 @@ impl Message {
     pub fn assistant(content: impl ToString) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: Content::text(content),
+            content: vec![Content::text(content)],
             tool_calls: None,
         }
     }
@@ -105,16 +105,89 @@ pub struct ToolResult {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Content {
-    pub content_type: String,
-    pub body: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Content {
+    Text {
+        text: String,
+    },
+    #[serde(rename = "image_url")]
+    ImageUrl {
+        image_url: ImageUrl,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImageUrl {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 impl Content {
     pub fn text(content: impl ToString) -> Self {
-        Self {
-            content_type: "text/plain".to_string(),
-            body: content.to_string(),
+        Content::Text {
+            text: content.to_string(),
+        }
+    }
+
+    pub fn image_url(url: impl ToString) -> Self {
+        Content::ImageUrl {
+            image_url: ImageUrl {
+                url: url.to_string(),
+                detail: None,
+            },
+        }
+    }
+
+    pub fn image_url_with_detail(url: impl ToString, detail: impl ToString) -> Self {
+        Content::ImageUrl {
+            image_url: ImageUrl {
+                url: url.to_string(),
+                detail: Some(detail.to_string()),
+            },
+        }
+    }
+
+    pub fn tool_use(id: impl ToString, name: impl ToString, input: serde_json::Value) -> Self {
+        Content::ToolUse {
+            id: id.to_string(),
+            name: name.to_string(),
+            input,
+        }
+    }
+
+    pub fn tool_result(tool_use_id: impl ToString, content: impl ToString) -> Self {
+        Content::ToolResult {
+            tool_use_id: tool_use_id.to_string(),
+            content: content.to_string(),
+            is_error: None,
+        }
+    }
+
+    pub fn tool_result_error(tool_use_id: impl ToString, content: impl ToString) -> Self {
+        Content::ToolResult {
+            tool_use_id: tool_use_id.to_string(),
+            content: content.to_string(),
+            is_error: Some(true),
+        }
+    }
+
+    /// Get the text content if this is a Text variant
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Content::Text { text } => Some(text.as_str()),
+            _ => None,
         }
     }
 }
