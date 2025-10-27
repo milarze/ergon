@@ -112,7 +112,7 @@ impl State {
                     response.choices[0]
                         .messages
                         .iter()
-                        .map(|m| m.content.body.clone())
+                        .flat_map(|m| m.content.iter().filter_map(|c| c.as_text().map(String::from)))
                         .collect()
                 } else {
                     vec!["Error: No response from model.".to_string()]
