@@ -110,9 +110,13 @@ impl State {
                 log::info!("Response received: {:?}", response);
                 let messages = if !response.choices.is_empty() {
                     response.choices[0]
-                        .messages
+                        .message
                         .iter()
-                        .map(|m| m.content.body.clone())
+                        .flat_map(|m| {
+                            m.content
+                                .iter()
+                                .filter_map(|c| c.as_text().map(String::from))
+                        })
                         .collect()
                 } else {
                     vec!["Error: No response from model.".to_string()]
@@ -387,7 +391,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             choices: vec![crate::models::Choice {
                 index: 0,
-                messages: vec![crate::models::Message::assistant("Hi there!".to_string())],
+                message: vec![crate::models::Message::assistant("Hi there!".to_string())],
                 finish_reason: "stop".to_string(),
             }],
         });
