@@ -118,7 +118,7 @@ impl Default for OpenAIClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{Content, Message, CompletionRequest};
+    use crate::models::{CompletionRequest, Content, Message};
 
     #[test]
     fn test_text_content_serialization() {
@@ -175,7 +175,7 @@ mod tests {
             Content::ImageUrl { image_url } => {
                 assert_eq!(image_url.url, "https://example.com/test.png");
                 assert_eq!(image_url.detail, Some("low".to_string()));
-            },
+            }
             _ => panic!("Expected ImageUrl variant"),
         }
     }
@@ -189,6 +189,7 @@ mod tests {
                 Content::image_url_with_detail("https://example.com/photo.jpg", "high"),
             ],
             tool_calls: None,
+            reasoning_content: None,
         };
 
         let json = serde_json::to_value(&message).unwrap();
@@ -198,7 +199,10 @@ mod tests {
         assert_eq!(json["content"][0]["type"], "text");
         assert_eq!(json["content"][0]["text"], "What's in this image?");
         assert_eq!(json["content"][1]["type"], "image_url");
-        assert_eq!(json["content"][1]["image_url"]["url"], "https://example.com/photo.jpg");
+        assert_eq!(
+            json["content"][1]["image_url"]["url"],
+            "https://example.com/photo.jpg"
+        );
         assert_eq!(json["content"][1]["image_url"]["detail"], "high");
     }
 
@@ -206,9 +210,7 @@ mod tests {
     fn test_completion_request_serialization() {
         let request = CompletionRequest {
             model: "gpt-4".to_string(),
-            messages: vec![
-                Message::user("Hello!"),
-            ],
+            messages: vec![Message::user("Hello!")],
             temperature: Some(0.7),
             tools: None,
         };
@@ -234,6 +236,7 @@ mod tests {
                 Content::image_url("https://example.com/img2.jpg"),
             ],
             tool_calls: None,
+            reasoning_content: None,
         };
 
         let json = serde_json::to_value(&message).unwrap();
