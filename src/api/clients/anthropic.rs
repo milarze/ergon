@@ -1,5 +1,7 @@
 //! The Claude API client.
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     config::{AnthropicConfig, Config},
     models::{Choice, CompletionRequest, CompletionResponse, Message},
@@ -20,6 +22,8 @@ impl AnthropicClient {
         let client = reqwest::Client::new();
         let url = format!("{}/messages", self.config.endpoint.trim_end_matches('/'));
         let data = self.serialize_request(request)?;
+        println!("AnthropicClient: Sending request to URL: {}", url);
+        println!("AnthropicClient: Request data: {}", data);
         let response = client
             .post(url)
             .header("x-api-key", self.config.api_key.clone())
@@ -115,60 +119,9 @@ impl AnthropicClient {
     }
 
     fn deserialize_response(&self, response_text: String) -> anyhow::Result<CompletionResponse> {
-        let parsed_json: serde_json::Value =
+        let anthropic_response: AnthropicCompletionResponse =
             serde_json::from_str(&response_text).map_err(anyhow::Error::from)?;
-        Ok(CompletionResponse {
-            id: parsed_json
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            object: parsed_json
-                .get("object")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            created: parsed_json
-                .get("created")
-                .and_then(|v| v.as_u64())
-                .unwrap_or_default(),
-            model: parsed_json
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            choices: vec![Choice {
-                index: 0,
-                messages: parsed_json
-                    .get("content")
-                    .and_then(|v| self.deserialize_content(v).ok())
-                    .unwrap_or_default(),
-                finish_reason: parsed_json
-                    .get("stop_reason")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-            }],
-        })
-    }
-
-    fn deserialize_content(&self, content: &serde_json::Value) -> anyhow::Result<Vec<Message>> {
-        if let serde_json::Value::Array(arr) = content {
-            let messages = arr
-                .iter()
-                .map(|msg| {
-                    Message::assistant(
-                        msg.get("text")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
-                    )
-                })
-                .collect();
-            Ok(messages)
-        } else {
-            Err(anyhow::anyhow!("Invalid content format"))
-        }
+        Ok(CompletionResponse::from(anthropic_response))
     }
 }
 
@@ -201,4 +154,149 @@ impl Default for AnthropicClient {
             config: Config::default().anthropic,
         }
     }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct AnthropicCompletionRequest {
+    pub model: String,
+    pub messages: Vec<AnthropicMessage>,
+    pub temperature: Option<f32>,
+    pub max_tokens: u32,
+}
+
+impl From<CompletionRequest> for AnthropicCompletionRequest {
+    fn from(request: CompletionRequest) -> Self {
+        AnthropicCompletionRequest {
+            model: request.model,
+            messages: request
+                .messages
+                .into_iter()
+                .map(AnthropicMessage::from)
+                .collect(),
+            temperature: request.temperature,
+            max_tokens: 2048, // Default value; can be overridden in client
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AnthropicCompletionResponse {
+    pub id: String,
+    pub model: String,
+    pub content: Vec<AnthropicMessageContent>,
+    pub role: String,
+    pub stop_reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_sequence: Option<String>,
+    #[serde(rename = "type")]
+    pub _type: String,
+    pub usage: Usage,
+}
+
+impl From<AnthropicCompletionResponse> for CompletionResponse {
+    fn from(response: AnthropicCompletionResponse) -> Self {
+        // Convert Anthropic content blocks to unified Content format
+        let content: Vec<crate::models::Content> = response
+            .content
+            .into_iter()
+            .map(|c| match c {
+                AnthropicMessageContent::Text { text } => crate::models::Content::Text { text },
+                AnthropicMessageContent::ToolUse { id, name, input } => {
+                    crate::models::Content::ToolUse { id, name, input }
+                }
+                AnthropicMessageContent::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } => crate::models::Content::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                },
+            })
+            .collect();
+
+        // Create a single Message with the converted content
+        let message = Message {
+            role: response.role,
+            content,
+            tool_calls: None,
+            reasoning_content: None,
+        };
+
+        CompletionResponse {
+            id: response.id,
+            object: "anthropic.completion".to_string(),
+            created: 0, // Anthropic response does not include created timestamp
+            model: response.model,
+            choices: vec![Choice {
+                index: 0,
+                message: vec![message],
+                finish_reason: response.stop_reason,
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AnthropicMessage {
+    pub role: String,
+    pub content: Vec<AnthropicMessageContent>,
+}
+
+impl From<Message> for AnthropicMessage {
+    fn from(message: Message) -> Self {
+        let content = message
+            .content
+            .into_iter()
+            .map(|c| match c {
+                crate::models::Content::Text { text } => AnthropicMessageContent::Text { text },
+                crate::models::Content::ToolUse { id, name, input } => {
+                    AnthropicMessageContent::ToolUse { id, name, input }
+                }
+                crate::models::Content::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } => AnthropicMessageContent::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                },
+                crate::models::Content::ImageUrl { .. } => todo!("Handle ImageUrl content"),
+            })
+            .collect();
+        AnthropicMessage {
+            role: message.role,
+            content,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum AnthropicMessageContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
 }

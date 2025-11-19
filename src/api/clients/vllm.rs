@@ -32,7 +32,13 @@ impl VllmClient {
             return Err(anyhow::anyhow!("Error: {}", error_text));
         }
         let text_data = response.text().await?;
-        let completion_response: CompletionResponse = serde_json::from_str(&text_data)
+        log::info!("vLLMClient: Response data: {}", text_data);
+        let completion_response: CompletionResponse = self.deserialize_response(&text_data)?;
+        Ok(completion_response)
+    }
+
+    fn deserialize_response(&self, response_text: &str) -> anyhow::Result<CompletionResponse> {
+        let completion_response: CompletionResponse = serde_json::from_str(response_text)
             .map_err(anyhow::Error::from)
             .unwrap();
         Ok(completion_response)
