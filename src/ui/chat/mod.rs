@@ -48,8 +48,7 @@ pub enum Sender {
 
 impl State {
     pub fn new() -> (Self, Task<ChatAction>) {
-        let mut state = Self::default();
-        state.awaiting_response = true;
+        let state = State { awaiting_response: true, ..Default::default() };
         let task = Task::perform(load_models(), ChatAction::ModelsLoaded);
         (state, task)
     }
