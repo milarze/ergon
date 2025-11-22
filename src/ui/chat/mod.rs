@@ -48,7 +48,8 @@ pub enum Sender {
 
 impl State {
     pub fn new() -> (Self, Task<ChatAction>) {
-        let state = Self::default();
+        let mut state = Self::default();
+        state.awaiting_response = true;
         let task = Task::perform(load_models(), ChatAction::ModelsLoaded);
         (state, task)
     }
@@ -144,6 +145,7 @@ impl State {
                 if self.selected_model.is_none() && !self.available_models.is_empty() {
                     self.selected_model = Some(self.available_models[0].name.clone());
                 }
+                self.awaiting_response = false;
                 Task::none()
             }
             ChatAction::UrlClicked(url) => {
