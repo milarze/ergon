@@ -9,6 +9,7 @@ use iced::{Alignment, Element, Length, Task, Theme};
 pub struct State {
     messages: Vec<ChatMessage>,
     input_value: String,
+    awaiting_response: bool,
     selected_model: Option<String>,
     available_models: Vec<ModelInfo>,
 }
@@ -60,6 +61,7 @@ impl State {
             }
             ChatAction::SendMessage => {
                 log::info!("Sending message: {}", self.input_value);
+                self.awaiting_response = true;
                 if !self.input_value.is_empty() {
                     let user_message = ChatMessage {
                         sender: Sender::User,
@@ -128,6 +130,7 @@ impl State {
                 });
                 self.messages.append(&mut bot_messages.collect::<Vec<_>>());
                 self.input_value.clear();
+                self.awaiting_response = false;
                 Task::none()
             }
             ChatAction::ModelSelected(model_name) => {
@@ -260,11 +263,19 @@ fn build_message_row(msg: &ChatMessage) -> Element<'_, ChatAction> {
 fn build_input_area(state: &State) -> Element<'_, ChatAction> {
     row![
         text_input("Type a message...", &state.input_value)
-            .on_input(ChatAction::InputChanged)
+            .on_input_maybe(if state.awaiting_response {
+                None
+            } else {
+                Some(ChatAction::InputChanged)
+            })
             .on_submit(ChatAction::SendMessage)
             .width(Length::FillPortion(8)),
         button("Send")
-            .on_press(ChatAction::SendMessage)
+            .on_press_maybe(if state.awaiting_response {
+                None
+            } else {
+                Some(ChatAction::SendMessage)
+            })
             .width(Length::FillPortion(1)),
         pick_list(
             state
@@ -314,10 +325,12 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            awaiting_response: false,
         };
 
         let message = ChatAction::SendMessage;
         let _ = state.update(message);
+        assert!(state.awaiting_response);
         let result_action = block_on(async { mock_complete_message(state.messages.clone()).await });
 
         assert_eq!(state.messages.len(), 1);
@@ -343,10 +356,12 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            awaiting_response: false,
         };
 
         let message = ChatAction::SendMessage;
         let _ = state.update(message);
+        assert!(state.awaiting_response);
         let result_action = block_on(async { mock_failt_complete_message().await });
 
         assert_eq!(state.messages.len(), 1);
@@ -382,6 +397,7 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            awaiting_response: true,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -401,6 +417,7 @@ mod tests {
         assert_eq!(state.messages[1].sender, Sender::Bot);
         assert_eq!(state.messages[1].content, "Hi there!");
         assert!(state.input_value.is_empty());
+        assert!(!state.awaiting_response);
     }
 
     #[test]
@@ -418,6 +435,7 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            awaiting_response: true,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -433,6 +451,7 @@ mod tests {
         assert_eq!(state.messages[1].sender, Sender::Bot);
         assert_eq!(state.messages[1].content, "Error: No response from model.");
         assert!(state.input_value.is_empty());
+        assert!(!state.awaiting_response);
     }
 
     #[test]
