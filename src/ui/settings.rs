@@ -30,7 +30,7 @@ pub struct State {
 }
 
 #[derive(Debug, Clone)]
-pub enum Action {
+pub enum SettingsAction {
     ChangeTheme(Theme),
     ChangeOpenAIKey(String),
     ChangeOpenAIUrl(String),
@@ -49,36 +49,36 @@ pub enum Action {
 }
 
 impl State {
-    pub fn update(&mut self, action: Action) {
+    pub fn update(&mut self, action: SettingsAction) {
         match action {
-            Action::ChangeTheme(theme) => {
+            SettingsAction::ChangeTheme(theme) => {
                 self.config.theme = theme;
             }
-            Action::ChangeOpenAIKey(api_key) => {
+            SettingsAction::ChangeOpenAIKey(api_key) => {
                 self.config.openai.api_key = api_key;
             }
-            Action::ChangeOpenAIUrl(endpoint) => {
+            SettingsAction::ChangeOpenAIUrl(endpoint) => {
                 self.config.openai.endpoint = endpoint;
             }
-            Action::ChangeAnthropicKey(api_key) => {
+            SettingsAction::ChangeAnthropicKey(api_key) => {
                 self.config.anthropic.api_key = api_key;
             }
-            Action::ChangeAnthropicUrl(endpoint) => {
+            SettingsAction::ChangeAnthropicUrl(endpoint) => {
                 self.config.anthropic.endpoint = endpoint;
             }
-            Action::ChangeAnthropicMaxTokens(max_tokens) => {
+            SettingsAction::ChangeAnthropicMaxTokens(max_tokens) => {
                 self.config.anthropic.max_tokens = max_tokens;
             }
-            Action::ChangeVllmUrl(endpoint) => {
+            SettingsAction::ChangeVllmUrl(endpoint) => {
                 self.config.vllm.endpoint = endpoint;
             }
-            Action::ChangeVllmModel(model) => {
+            SettingsAction::ChangeVllmModel(model) => {
                 self.config.vllm.model = model;
             }
-            Action::AddMcpConfig => {
+            SettingsAction::AddMcpConfig => {
                 self.config.mcp_configs.push(McpConfig::default());
             }
-            Action::ChangeMcpConfigType(index, is_stdio) => {
+            SettingsAction::ChangeMcpConfigType(index, is_stdio) => {
                 if let Some(config) = self.config.mcp_configs.get_mut(index) {
                     *config = if is_stdio {
                         McpConfig::Stdio(McpStdioConfig::default())
@@ -87,13 +87,13 @@ impl State {
                     };
                 }
             }
-            Action::ChangeMcpStdioCommand(index, command) => {
+            SettingsAction::ChangeMcpStdioCommand(index, command) => {
                 if let Some(McpConfig::Stdio(stdio_config)) = self.config.mcp_configs.get_mut(index)
                 {
                     stdio_config.command = command;
                 }
             }
-            Action::ChangeMcpStdioArgs(index, args_str) => {
+            SettingsAction::ChangeMcpStdioArgs(index, args_str) => {
                 if let Some(McpConfig::Stdio(stdio_config)) = self.config.mcp_configs.get_mut(index)
                 {
                     stdio_config.args = args_str
@@ -103,32 +103,32 @@ impl State {
                         .collect();
                 }
             }
-            Action::ChangeMcpHttpEndpoint(index, endpoint) => {
+            SettingsAction::ChangeMcpHttpEndpoint(index, endpoint) => {
                 if let Some(McpConfig::StreamableHttp(http_config)) =
                     self.config.mcp_configs.get_mut(index)
                 {
                     http_config.endpoint = endpoint;
                 }
             }
-            Action::RemoveMcpConfig(index) => {
+            SettingsAction::RemoveMcpConfig(index) => {
                 if index < self.config.mcp_configs.len() {
                     self.config.mcp_configs.remove(index);
                 }
             }
-            Action::SaveSettings => {
+            SettingsAction::SaveSettings => {
                 self.config.update_settings();
             }
         }
     }
 
-    pub fn view(&self) -> Element<'_, Action> {
+    pub fn view(&self) -> Element<'_, SettingsAction> {
         let col = column![
             self.theme_view(),
             self.openai_view(),
             self.anthropic_view(),
             self.vllm_view(),
             self.mcp_configs_view(),
-            button("Save Settings").on_press(Action::SaveSettings)
+            button("Save Settings").on_press(SettingsAction::SaveSettings)
         ]
         .spacing(20)
         .padding(20)
@@ -141,58 +141,59 @@ impl State {
             .into()
     }
 
-    fn theme_view(&self) -> iced::widget::Row<'_, Action> {
+    fn theme_view(&self) -> iced::widget::Row<'_, SettingsAction> {
         row![
-            button("Light").on_press(Action::ChangeTheme(Theme::Light)),
-            button("Dark").on_press(Action::ChangeTheme(Theme::Dark)),
+            button("Light").on_press(SettingsAction::ChangeTheme(Theme::Light)),
+            button("Dark").on_press(SettingsAction::ChangeTheme(Theme::Dark)),
         ]
         .spacing(10)
         .align_y(Alignment::Center)
     }
 
-    fn openai_view(&self) -> iced::widget::Row<'_, Action> {
+    fn openai_view(&self) -> iced::widget::Row<'_, SettingsAction> {
         row![
             text("OpenAI API Key:"),
             text_input("Enter API Key", &self.config.openai.api_key)
-                .on_input(Action::ChangeOpenAIKey),
+                .on_input(SettingsAction::ChangeOpenAIKey),
             text("Endpoint:"),
             text_input("Enter Endpoint", &self.config.openai.endpoint)
-                .on_input(Action::ChangeOpenAIUrl),
+                .on_input(SettingsAction::ChangeOpenAIUrl),
         ]
         .spacing(10)
         .align_y(Alignment::Center)
     }
 
-    fn anthropic_view(&self) -> iced::widget::Row<'_, Action> {
+    fn anthropic_view(&self) -> iced::widget::Row<'_, SettingsAction> {
         row![
             text("Anthropic API Key:"),
             text_input("Enter API Key", &self.config.anthropic.api_key)
-                .on_input(Action::ChangeAnthropicKey),
+                .on_input(SettingsAction::ChangeAnthropicKey),
             text("Endpoint:"),
             text_input("Enter Endpoint", &self.config.anthropic.endpoint)
-                .on_input(Action::ChangeAnthropicUrl),
+                .on_input(SettingsAction::ChangeAnthropicUrl),
             text("Max Tokens:"),
             number_input(&self.config.anthropic.max_tokens, 1..=4096, |value| {
-                Action::ChangeAnthropicMaxTokens(value)
+                SettingsAction::ChangeAnthropicMaxTokens(value)
             })
         ]
         .spacing(10)
         .align_y(Alignment::Center)
     }
 
-    fn vllm_view(&self) -> iced::widget::Row<'_, Action> {
+    fn vllm_view(&self) -> iced::widget::Row<'_, SettingsAction> {
         row![
             text("vLLM Endpoint:"),
             text_input("Enter Endpoint", &self.config.vllm.endpoint)
-                .on_input(Action::ChangeVllmUrl),
+                .on_input(SettingsAction::ChangeVllmUrl),
             text("Model:"),
-            text_input("Enter Model", &self.config.vllm.model).on_input(Action::ChangeVllmModel),
+            text_input("Enter Model", &self.config.vllm.model)
+                .on_input(SettingsAction::ChangeVllmModel),
         ]
         .spacing(10)
         .align_y(Alignment::Center)
     }
 
-    fn mcp_configs_view(&self) -> iced::widget::Column<'_, Action> {
+    fn mcp_configs_view(&self) -> iced::widget::Column<'_, SettingsAction> {
         let mut column = column![text("MCP Servers:").size(18)];
 
         for (index, mcp_config) in self.config.mcp_configs.iter().enumerate() {
@@ -205,7 +206,7 @@ impl State {
                 &McpConfigType::ALL[..],
                 Some(config_type),
                 move |selected_type| {
-                    Action::ChangeMcpConfigType(
+                    SettingsAction::ChangeMcpConfigType(
                         index,
                         matches!(selected_type, McpConfigType::Stdio),
                     )
@@ -218,18 +219,19 @@ impl State {
                     row![
                         text("Command:"),
                         text_input("Enter command", &stdio_config.command)
-                            .on_input(move |cmd| Action::ChangeMcpStdioCommand(index, cmd)),
+                            .on_input(move |cmd| SettingsAction::ChangeMcpStdioCommand(index, cmd)),
                         text("Args:"),
                         text_input("comma,separated,args", &args_str)
-                            .on_input(move |args| Action::ChangeMcpStdioArgs(index, args)),
+                            .on_input(move |args| SettingsAction::ChangeMcpStdioArgs(index, args)),
                     ]
                     .spacing(10)
                     .align_y(Alignment::Center)
                 }
                 McpConfig::StreamableHttp(http_config) => row![
                     text("Endpoint:"),
-                    text_input("Enter endpoint URL", &http_config.endpoint)
-                        .on_input(move |endpoint| Action::ChangeMcpHttpEndpoint(index, endpoint)),
+                    text_input("Enter endpoint URL", &http_config.endpoint).on_input(
+                        move |endpoint| SettingsAction::ChangeMcpHttpEndpoint(index, endpoint)
+                    ),
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
@@ -240,7 +242,7 @@ impl State {
                     text(format!("Config {}:", index + 1)),
                     type_picker,
                     config_fields,
-                    button("Remove").on_press(Action::RemoveMcpConfig(index))
+                    button("Remove").on_press(SettingsAction::RemoveMcpConfig(index))
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
@@ -248,7 +250,7 @@ impl State {
         }
 
         column
-            .push(button("Add MCP Config").on_press(Action::AddMcpConfig))
+            .push(button("Add MCP Config").on_press(SettingsAction::AddMcpConfig))
             .spacing(10)
             .align_x(Alignment::Center)
     }
@@ -263,21 +265,21 @@ mod tests {
     #[test]
     fn test_update_theme() {
         let mut state = State::default();
-        state.update(Action::ChangeTheme(Theme::Dark));
+        state.update(SettingsAction::ChangeTheme(Theme::Dark));
         assert_eq!(state.config.theme, Theme::Dark);
     }
 
     #[test]
     fn test_update_openai_key() {
         let mut state = State::default();
-        state.update(Action::ChangeOpenAIKey("new_api_key".to_string()));
+        state.update(SettingsAction::ChangeOpenAIKey("new_api_key".to_string()));
         assert_eq!(state.config.openai.api_key, "new_api_key");
     }
 
     #[test]
     fn test_update_openai_url() {
         let mut state = State::default();
-        state.update(Action::ChangeOpenAIUrl(
+        state.update(SettingsAction::ChangeOpenAIUrl(
             "https://new.endpoint.com".to_string(),
         ));
         assert_eq!(state.config.openai.endpoint, "https://new.endpoint.com");
@@ -286,14 +288,16 @@ mod tests {
     #[test]
     fn test_update_anthropic_key() {
         let mut state = State::default();
-        state.update(Action::ChangeAnthropicKey("new_anthropic_key".to_string()));
+        state.update(SettingsAction::ChangeAnthropicKey(
+            "new_anthropic_key".to_string(),
+        ));
         assert_eq!(state.config.anthropic.api_key, "new_anthropic_key");
     }
 
     #[test]
     fn test_update_anthropic_url() {
         let mut state = State::default();
-        state.update(Action::ChangeAnthropicUrl(
+        state.update(SettingsAction::ChangeAnthropicUrl(
             "https://new.anthropic.endpoint.com".to_string(),
         ));
         assert_eq!(
@@ -305,14 +309,14 @@ mod tests {
     #[test]
     fn test_update_anthropic_max_tokens() {
         let mut state = State::default();
-        state.update(Action::ChangeAnthropicMaxTokens(2048));
+        state.update(SettingsAction::ChangeAnthropicMaxTokens(2048));
         assert_eq!(state.config.anthropic.max_tokens, 2048);
     }
 
     #[test]
     fn test_update_vllm_url() {
         let mut state = State::default();
-        state.update(Action::ChangeVllmUrl(
+        state.update(SettingsAction::ChangeVllmUrl(
             "http://new.vllm.endpoint.com".to_string(),
         ));
         assert_eq!(state.config.vllm.endpoint, "http://new.vllm.endpoint.com");
@@ -321,7 +325,7 @@ mod tests {
     #[test]
     fn test_update_vllm_model() {
         let mut state = State::default();
-        state.update(Action::ChangeVllmModel("new-model".to_string()));
+        state.update(SettingsAction::ChangeVllmModel("new-model".to_string()));
         assert_eq!(state.config.vllm.model, "new-model");
     }
 
@@ -347,14 +351,16 @@ mod tests {
                 settings_file: "./test.json".to_string(),
             },
         };
-        state.update(Action::ChangeTheme(Theme::Dark));
-        state.update(Action::ChangeOpenAIKey("test_key".to_string()));
-        state.update(Action::ChangeOpenAIUrl("https://api.test.com".to_string()));
-        state.update(Action::ChangeAnthropicKey("hello".to_string()));
-        state.update(Action::ChangeAnthropicUrl(
+        state.update(SettingsAction::ChangeTheme(Theme::Dark));
+        state.update(SettingsAction::ChangeOpenAIKey("test_key".to_string()));
+        state.update(SettingsAction::ChangeOpenAIUrl(
+            "https://api.test.com".to_string(),
+        ));
+        state.update(SettingsAction::ChangeAnthropicKey("hello".to_string()));
+        state.update(SettingsAction::ChangeAnthropicUrl(
             "https://api.anthropic.com/v1/".to_string(),
         ));
-        state.update(Action::SaveSettings);
+        state.update(SettingsAction::SaveSettings);
 
         // Assuming update_settings persists the changes, we can check the config
         assert_eq!(state.config.theme, Theme::Dark);
