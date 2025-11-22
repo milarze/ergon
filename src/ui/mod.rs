@@ -8,7 +8,7 @@ mod settings;
 
 use crate::{config::McpConfig, mcp::McpClient};
 
-pub fn init() -> (Ergon, Task<Message>) {
+pub fn init() -> (Ergon, Task<NavigationAction>) {
     Ergon::new()
 }
 
@@ -22,7 +22,7 @@ pub struct Ergon {
 }
 
 impl Ergon {
-    pub fn new() -> (Self, Task<Message>) {
+    pub fn new() -> (Self, Task<NavigationAction>) {
         let (chat_state, chat_task) = chat::State::new();
         let settings = settings::State::default();
         let state = Self {
@@ -31,16 +31,16 @@ impl Ergon {
             settings: settings.clone(),
             mcp_clients: initialize_mcp_clients(settings.config.mcp_configs),
         };
-        let task = chat_task.map(Message::Chat);
+        let task = chat_task.map(NavigationAction::Chat);
         (state, task)
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum NavigationAction {
     Navigate(PageId),
-    Chat(chat::Action),
-    Settings(settings::Action),
+    Chat(chat::ChatAction),
+    Settings(settings::SettingsAction),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
@@ -50,29 +50,29 @@ pub enum PageId {
     Settings,
 }
 
-pub fn update(state: &mut Ergon, action: Message) -> Task<Message> {
+pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAction> {
     match action {
-        Message::Navigate(page_id) => {
+        NavigationAction::Navigate(page_id) => {
             state.current_page = page_id;
             Task::none()
         }
-        Message::Chat(chat_action) => {
+        NavigationAction::Chat(chat_action) => {
             let task = state.chat.update(chat_action);
-            task.map(Message::Chat)
+            task.map(NavigationAction::Chat)
         }
-        Message::Settings(settings_action) => {
+        NavigationAction::Settings(settings_action) => {
             state.settings.update(settings_action);
             Task::none()
         }
     }
 }
 
-pub fn view(state: &Ergon) -> Element<'_, Message> {
+pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {
     let navigation = build_navigation_bar(&state.current_page);
 
     let page_content = match &state.current_page {
-        PageId::Chat => state.chat.view().map(Message::Chat),
-        PageId::Settings => state.settings.view().map(Message::Settings),
+        PageId::Chat => state.chat.view().map(NavigationAction::Chat),
+        PageId::Settings => state.settings.view().map(NavigationAction::Settings),
     };
 
     column![navigation, page_content]
@@ -81,15 +81,15 @@ pub fn view(state: &Ergon) -> Element<'_, Message> {
         .into()
 }
 
-fn build_navigation_bar(current_page: &PageId) -> Element<'static, Message> {
+fn build_navigation_bar(current_page: &PageId) -> Element<'static, NavigationAction> {
     row![
         button("Chat").on_press_maybe(if current_page != &PageId::Chat {
-            Some(Message::Navigate(PageId::Chat))
+            Some(NavigationAction::Navigate(PageId::Chat))
         } else {
             None
         }),
         button("Settings").on_press_maybe(if current_page != &PageId::Settings {
-            Some(Message::Navigate(PageId::Settings))
+            Some(NavigationAction::Navigate(PageId::Settings))
         } else {
             None
         }),

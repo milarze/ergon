@@ -30,7 +30,7 @@ impl From<ChatMessage> for Message {
 }
 
 #[derive(Debug, Clone)]
-pub enum Action {
+pub enum ChatAction {
     InputChanged(String),
     SendMessage,
     ResponseReceived(CompletionResponse),
@@ -46,19 +46,19 @@ pub enum Sender {
 }
 
 impl State {
-    pub fn new() -> (Self, Task<Action>) {
+    pub fn new() -> (Self, Task<ChatAction>) {
         let state = Self::default();
-        let task = Task::perform(load_models(), Action::ModelsLoaded);
+        let task = Task::perform(load_models(), ChatAction::ModelsLoaded);
         (state, task)
     }
 
-    pub fn update(&mut self, action: Action) -> Task<Action> {
+    pub fn update(&mut self, action: ChatAction) -> Task<ChatAction> {
         match action {
-            Action::InputChanged(value) => {
+            ChatAction::InputChanged(value) => {
                 self.input_value = value;
                 Task::none()
             }
-            Action::SendMessage => {
+            ChatAction::SendMessage => {
                 log::info!("Sending message: {}", self.input_value);
                 if !self.input_value.is_empty() {
                     let user_message = ChatMessage {
@@ -78,7 +78,7 @@ impl State {
                                     model.client.clone(),
                                     model.id.clone(),
                                 ),
-                                Action::ResponseReceived,
+                                ChatAction::ResponseReceived,
                             )
                         } else {
                             // Fallback to default model if selected model not found
@@ -88,7 +88,7 @@ impl State {
                                     Clients::OpenAI,
                                     "gpt-4o-mini".to_string(),
                                 ),
-                                Action::ResponseReceived,
+                                ChatAction::ResponseReceived,
                             )
                         }
                     } else {
@@ -99,14 +99,14 @@ impl State {
                                 Clients::OpenAI,
                                 "gpt-4o-mini".to_string(),
                             ),
-                            Action::ResponseReceived,
+                            ChatAction::ResponseReceived,
                         )
                     }
                 } else {
                     Task::none()
                 }
             }
-            Action::ResponseReceived(response) => {
+            ChatAction::ResponseReceived(response) => {
                 log::info!("Response received: {:?}", response);
                 let messages = if !response.choices.is_empty() {
                     response.choices[0]
@@ -130,12 +130,12 @@ impl State {
                 self.input_value.clear();
                 Task::none()
             }
-            Action::ModelSelected(model_name) => {
+            ChatAction::ModelSelected(model_name) => {
                 log::info!("Model selected: {}", model_name);
                 self.selected_model = Some(model_name);
                 Task::none()
             }
-            Action::ModelsLoaded(models) => {
+            ChatAction::ModelsLoaded(models) => {
                 log::info!("Models loaded: {} models available", models.len());
                 self.available_models = models;
                 if self.selected_model.is_none() && !self.available_models.is_empty() {
@@ -143,14 +143,14 @@ impl State {
                 }
                 Task::none()
             }
-            Action::UrlClicked(url) => {
+            ChatAction::UrlClicked(url) => {
                 log::info!("URL clicked: {}", url);
                 Task::none()
             }
         }
     }
 
-    pub fn view(&self) -> Element<'_, Action> {
+    pub fn view(&self) -> Element<'_, ChatAction> {
         let chat_window = column![build_message_list(&self.messages), build_input_area(self),]
             .spacing(10)
             .padding(10);
@@ -227,8 +227,8 @@ async fn load_models() -> Vec<ModelInfo> {
     }
 }
 
-fn build_message_list(messages: &[ChatMessage]) -> Element<'_, Action> {
-    let rows: Vec<Element<Action>> = messages.iter().map(build_message_row).collect();
+fn build_message_list(messages: &[ChatMessage]) -> Element<'_, ChatAction> {
+    let rows: Vec<Element<ChatAction>> = messages.iter().map(build_message_row).collect();
 
     scrollable(
         container(column(rows).spacing(10).padding(10))
@@ -239,7 +239,7 @@ fn build_message_list(messages: &[ChatMessage]) -> Element<'_, Action> {
     .into()
 }
 
-fn build_message_row(msg: &ChatMessage) -> Element<'_, Action> {
+fn build_message_row(msg: &ChatMessage) -> Element<'_, ChatAction> {
     let formatted_message = match msg.sender {
         Sender::User => "You: ".to_string(),
         Sender::Bot => "Bot: ".to_string(),
@@ -252,19 +252,19 @@ fn build_message_row(msg: &ChatMessage) -> Element<'_, Action> {
             markdown::Settings::default(),
             markdown::Style::from_palette(Theme::default().palette())
         )
-        .map(|url| Action::UrlClicked(url.to_string())),
+        .map(|url| ChatAction::UrlClicked(url.to_string())),
     ]
     .into()
 }
 
-fn build_input_area(state: &State) -> Element<'_, Action> {
+fn build_input_area(state: &State) -> Element<'_, ChatAction> {
     row![
         text_input("Type a message...", &state.input_value)
-            .on_input(Action::InputChanged)
-            .on_submit(Action::SendMessage)
+            .on_input(ChatAction::InputChanged)
+            .on_submit(ChatAction::SendMessage)
             .width(Length::FillPortion(8)),
         button("Send")
-            .on_press(Action::SendMessage)
+            .on_press(ChatAction::SendMessage)
             .width(Length::FillPortion(1)),
         pick_list(
             state
@@ -273,7 +273,7 @@ fn build_input_area(state: &State) -> Element<'_, Action> {
                 .map(|m| m.name.clone())
                 .collect::<Vec<_>>(),
             state.selected_model.as_ref(),
-            Action::ModelSelected
+            ChatAction::ModelSelected
         )
         .width(Length::FillPortion(3)),
     ]
@@ -293,7 +293,7 @@ mod tests {
     fn test_input_changed() {
         let mut state = State::default();
 
-        let message = Action::InputChanged("Hello, world!".to_string());
+        let message = ChatAction::InputChanged("Hello, world!".to_string());
         let _ = state.update(message);
 
         assert_eq!(state.input_value, "Hello, world!");
@@ -316,7 +316,7 @@ mod tests {
             }],
         };
 
-        let message = Action::SendMessage;
+        let message = ChatAction::SendMessage;
         let _ = state.update(message);
         let result_action = block_on(async { mock_complete_message(state.messages.clone()).await });
 
@@ -345,7 +345,7 @@ mod tests {
             }],
         };
 
-        let message = Action::SendMessage;
+        let message = ChatAction::SendMessage;
         let _ = state.update(message);
         let result_action = block_on(async { mock_failt_complete_message().await });
 
@@ -361,7 +361,7 @@ mod tests {
     fn test_send_empty_message() {
         let mut state = State::default();
 
-        let message = Action::SendMessage;
+        let message = ChatAction::SendMessage;
         let _ = state.update(message);
 
         assert!(state.messages.is_empty());
@@ -384,7 +384,7 @@ mod tests {
             }],
         };
 
-        let response = Action::ResponseReceived(CompletionResponse {
+        let response = ChatAction::ResponseReceived(CompletionResponse {
             id: "resp1".to_string(),
             object: "chat.completion".to_string(),
             created: 0,
@@ -420,7 +420,7 @@ mod tests {
             }],
         };
 
-        let response = Action::ResponseReceived(CompletionResponse {
+        let response = ChatAction::ResponseReceived(CompletionResponse {
             id: "error".to_string(),
             object: "chat.completion".to_string(),
             created: 0,
@@ -440,7 +440,7 @@ mod tests {
         let mut state = State::default();
         let model_name = "gpt-4o-mini".to_string();
 
-        let action = Action::ModelSelected(model_name.clone());
+        let action = ChatAction::ModelSelected(model_name.clone());
         let _ = state.update(action);
 
         assert_eq!(state.selected_model, Some(model_name));
