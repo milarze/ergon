@@ -83,7 +83,7 @@ impl State {
 
     fn on_response_received(&mut self, response: CompletionResponse) -> Task<ChatAction> {
         log::info!("Response received: {:?}", response);
-        let messages = if !response.choices.is_empty() {
+        let response_messages = if !response.choices.is_empty() {
             response.choices[0]
                 .message
                 .iter()
@@ -96,7 +96,7 @@ impl State {
         } else {
             vec!["Error: No response from model.".to_string()]
         };
-        let bot_messages = messages.into_iter().map(|content| ChatMessage {
+        let bot_messages = response_messages.into_iter().map(|content| ChatMessage {
             sender: Sender::Bot,
             markdown_items: markdown::parse(&content).collect(),
             content,
