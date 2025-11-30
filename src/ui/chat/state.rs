@@ -5,7 +5,7 @@ use iced::{
 
 use crate::{
     api::clients::get_model_manager,
-    models::{Clients, ModelInfo},
+    models::{Clients, CompletionResponse, ModelInfo},
     ui::chat::{complete_message, load_models, ChatAction, ChatMessage, Sender},
 };
 
@@ -30,103 +30,100 @@ impl State {
 
     pub fn update(&mut self, action: ChatAction) -> Task<ChatAction> {
         match action {
-            ChatAction::InputChanged(value) => {
-                self.input_value = value;
-                Task::none()
-            }
-            ChatAction::SendMessage => {
-                log::info!("Sending message: {}", self.input_value);
-                self.awaiting_response = true;
-                if !self.input_value.is_empty() {
-                    let user_message = ChatMessage {
-                        sender: Sender::User,
-                        content: self.input_value.clone(),
-                        markdown_items: markdown::parse(&self.input_value).collect(),
-                    };
-                    self.messages.push(user_message);
-
-                    if let Some(model_name) = &self.selected_model {
-                        if let Some(model) =
-                            get_model_manager().find_model(model_name).unwrap_or(None)
-                        {
-                            Task::perform(
-                                complete_message(
-                                    self.messages.clone(),
-                                    model.client.clone(),
-                                    model.id.clone(),
-                                ),
-                                ChatAction::ResponseReceived,
-                            )
-                        } else {
-                            // Fallback to default model if selected model not found
-                            Task::perform(
-                                complete_message(
-                                    self.messages.clone(),
-                                    Clients::OpenAI,
-                                    "gpt-4o-mini".to_string(),
-                                ),
-                                ChatAction::ResponseReceived,
-                            )
-                        }
-                    } else {
-                        // No model selected, use default
-                        Task::perform(
-                            complete_message(
-                                self.messages.clone(),
-                                Clients::OpenAI,
-                                "gpt-4o-mini".to_string(),
-                            ),
-                            ChatAction::ResponseReceived,
-                        )
-                    }
-                } else {
-                    Task::none()
-                }
-            }
-            ChatAction::ResponseReceived(response) => {
-                log::info!("Response received: {:?}", response);
-                let messages = if !response.choices.is_empty() {
-                    response.choices[0]
-                        .message
-                        .iter()
-                        .flat_map(|m| {
-                            m.content
-                                .iter()
-                                .filter_map(|c| c.as_text().map(String::from))
-                        })
-                        .collect()
-                } else {
-                    vec!["Error: No response from model.".to_string()]
-                };
-                let bot_messages = messages.into_iter().map(|content| ChatMessage {
-                    sender: Sender::Bot,
-                    markdown_items: markdown::parse(&content).collect(),
-                    content,
-                });
-                self.messages.append(&mut bot_messages.collect::<Vec<_>>());
-                self.input_value.clear();
-                self.awaiting_response = false;
-                Task::none()
-            }
-            ChatAction::ModelSelected(model_name) => {
-                log::info!("Model selected: {}", model_name);
-                self.selected_model = Some(model_name);
-                Task::none()
-            }
-            ChatAction::ModelsLoaded(models) => {
-                log::info!("Models loaded: {} models available", models.len());
-                self.available_models = models;
-                if self.selected_model.is_none() && !self.available_models.is_empty() {
-                    self.selected_model = Some(self.available_models[0].name.clone());
-                }
-                self.awaiting_response = false;
-                Task::none()
-            }
-            ChatAction::UrlClicked(url) => {
-                log::info!("URL clicked: {}", url);
-                Task::none()
-            }
+            ChatAction::InputChanged(value) => self.on_input_changed(value),
+            ChatAction::SendMessage => self.on_send_message(),
+            ChatAction::ResponseReceived(response) => self.on_response_received(response),
+            ChatAction::ModelSelected(model_name) => self.on_model_selected(model_name),
+            ChatAction::ModelsLoaded(models) => self.on_models_loaded(models),
+            ChatAction::UrlClicked(url) => self.on_url_clicked(url),
         }
+    }
+
+    fn on_input_changed(&mut self, value: String) -> Task<ChatAction> {
+        self.input_value = value;
+        Task::none()
+    }
+
+    fn on_send_message(&mut self) -> Task<ChatAction> {
+        self.awaiting_response = true;
+        if !self.input_value.is_empty() {
+            let user_message = self.build_pending_message();
+            self.messages.push(user_message);
+
+            let default_model = "gpt-4o-mini".to_string();
+            let model_name = self.selected_model.as_ref().unwrap_or(&default_model);
+            let model = get_model_manager()
+                .find_model(model_name)
+                .unwrap_or(None)
+                .unwrap_or(ModelInfo {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
+                    client: Clients::OpenAI,
+                });
+            Task::perform(
+                complete_message(
+                    self.messages.clone(),
+                    model.client.clone(),
+                    model.id.clone(),
+                ),
+                ChatAction::ResponseReceived,
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn build_pending_message(&self) -> ChatMessage {
+        ChatMessage {
+            sender: Sender::User,
+            content: self.input_value.clone(),
+            markdown_items: markdown::parse(&self.input_value).collect(),
+        }
+    }
+
+    fn on_response_received(&mut self, response: CompletionResponse) -> Task<ChatAction> {
+        log::info!("Response received: {:?}", response);
+        let messages = if !response.choices.is_empty() {
+            response.choices[0]
+                .message
+                .iter()
+                .flat_map(|m| {
+                    m.content
+                        .iter()
+                        .filter_map(|c| c.as_text().map(String::from))
+                })
+                .collect()
+        } else {
+            vec!["Error: No response from model.".to_string()]
+        };
+        let bot_messages = messages.into_iter().map(|content| ChatMessage {
+            sender: Sender::Bot,
+            markdown_items: markdown::parse(&content).collect(),
+            content,
+        });
+        self.messages.append(&mut bot_messages.collect::<Vec<_>>());
+        self.input_value.clear();
+        self.awaiting_response = false;
+        Task::none()
+    }
+
+    fn on_model_selected(&mut self, model_name: String) -> Task<ChatAction> {
+        self.selected_model = Some(model_name);
+        Task::none()
+    }
+
+    fn on_models_loaded(&mut self, models: Vec<ModelInfo>) -> Task<ChatAction> {
+        self.available_models = models;
+        if self.selected_model.is_none() && !self.available_models.is_empty() {
+            self.selected_model = Some(self.available_models[0].name.clone());
+        }
+        self.awaiting_response = false;
+        Task::none()
+    }
+
+    fn on_url_clicked(&mut self, url: String) -> Task<ChatAction> {
+        log::info!("URL clicked: {}", url);
+        Task::none()
     }
 
     pub fn view(&self) -> Element<'_, ChatAction> {
