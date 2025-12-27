@@ -5,8 +5,8 @@ use iced::{
 
 use crate::{
     api::clients::get_model_manager,
-    models::{Clients, CompletionResponse, ModelInfo},
-    ui::chat::{complete_message, load_models, ChatAction, ChatMessage, Sender},
+    models::{Clients, CompletionResponse, ModelInfo, Tool},
+    ui::chat::{complete_message, load_models, load_tools, ChatAction, ChatMessage, Sender},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -16,6 +16,7 @@ pub struct State {
     awaiting_response: bool,
     selected_model: Option<String>,
     available_models: Vec<ModelInfo>,
+    available_tools: Vec<Tool>,
 }
 
 impl State {
@@ -24,7 +25,10 @@ impl State {
             awaiting_response: true,
             ..Default::default()
         };
-        let task = Task::perform(load_models(), ChatAction::ModelsLoaded);
+        let task = Task::batch([
+            Task::perform(load_models(), ChatAction::ModelsLoaded),
+            Task::perform(load_tools(), ChatAction::ToolsLoaaded),
+        ]);
         (state, task)
     }
 
@@ -36,6 +40,7 @@ impl State {
             ChatAction::ModelSelected(model_name) => self.on_model_selected(model_name),
             ChatAction::ModelsLoaded(models) => self.on_models_loaded(models),
             ChatAction::UrlClicked(url) => self.on_url_clicked(url),
+            ChatAction::ToolsLoaaded(tools) => self.on_tools_loaded(tools),
         }
     }
 
@@ -65,6 +70,7 @@ impl State {
                     self.messages.clone(),
                     model.client.clone(),
                     model.id.clone(),
+                    self.available_tools.clone(),
                 ),
                 ChatAction::ResponseReceived,
             )
@@ -118,6 +124,12 @@ impl State {
             self.selected_model = Some(self.available_models[0].name.clone());
         }
         self.awaiting_response = false;
+        Task::none()
+    }
+
+    fn on_tools_loaded(&mut self, tools: Vec<crate::models::Tool>) -> Task<ChatAction> {
+        log::info!("Tools loaded: {:?}", tools);
+        self.available_tools = tools;
         Task::none()
     }
 

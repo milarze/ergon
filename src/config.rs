@@ -55,12 +55,14 @@ impl Default for VllmConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct McpStdioConfig {
+    pub name: String,
     pub command: String,
     pub args: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct McpStreamableHttpConfig {
+    pub name: String,
     pub endpoint: String,
 }
 
@@ -73,6 +75,7 @@ pub enum McpConfig {
 impl Default for McpConfig {
     fn default() -> Self {
         McpConfig::Stdio(McpStdioConfig {
+            name: "Default Stdio MCP".to_string(),
             command: "".to_string(),
             args: vec![],
         })
@@ -84,6 +87,15 @@ impl Display for McpConfig {
         match self {
             McpConfig::Stdio(_) => write!(f, "Stdio"),
             McpConfig::StreamableHttp(_) => write!(f, "StreamableHttp"),
+        }
+    }
+}
+
+impl McpConfig {
+    pub fn name(&self) -> &str {
+        match self {
+            McpConfig::Stdio(cfg) => &cfg.name,
+            McpConfig::StreamableHttp(cfg) => &cfg.name,
         }
     }
 }
@@ -433,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_with_mcp() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"endpoint":"http://localhost:9000/v1/"}}]}"#;
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"name":"stdio-mcp",command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"name":"http-mcp",endpoint":"http://localhost:9000/v1/"}}]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai.api_key, "test_key");
@@ -446,6 +458,7 @@ mod tests {
         assert_eq!(config.mcp_configs.len(), 2);
         match &config.mcp_configs[0] {
             McpConfig::Stdio(stdio_config) => {
+                assert_eq!(stdio_config.name, "stdio-mcp");
                 assert_eq!(stdio_config.command, "python3");
                 assert_eq!(stdio_config.args, vec!["-u", "mcp_stdio.py"]);
             }
@@ -453,6 +466,7 @@ mod tests {
         }
         match &config.mcp_configs[1] {
             McpConfig::StreamableHttp(http_config) => {
+                assert_eq!(http_config.name, "http-mcp");
                 assert_eq!(http_config.endpoint, "http://localhost:9000/v1/");
             }
             _ => panic!("Expected StreamableHttp config"),

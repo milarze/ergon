@@ -12,13 +12,9 @@ where
 
     match value {
         // String: wrap in Content::Text
-        serde_json::Value::String(s) => {
-            Ok(vec![Content::Text { text: s }])
-        }
+        serde_json::Value::String(s) => Ok(vec![Content::Text { text: s }]),
         // Array: deserialize as Vec<Content>
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(value).map_err(D::Error::custom)
-        }
+        serde_json::Value::Array(_) => serde_json::from_value(value).map_err(D::Error::custom),
         // Null: return empty vec
         serde_json::Value::Null => Ok(vec![]),
         _ => Err(D::Error::custom("content must be string, array, or null")),
@@ -41,9 +37,7 @@ where
             Ok(vec![msg])
         }
         // Array: deserialize as Vec<Message>
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(value).map_err(D::Error::custom)
-        }
+        serde_json::Value::Array(_) => serde_json::from_value(value).map_err(D::Error::custom),
         _ => Err(D::Error::custom("message must be object or array")),
     }
 }
@@ -146,8 +140,14 @@ pub struct CompletionRequest {
     pub tools: Option<Vec<Tool>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Tool {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "function", rename_all = "snake_case")]
+pub enum Tool {
+    Function(Function),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Function {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,

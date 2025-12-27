@@ -1,6 +1,6 @@
 use crate::{
     api::clients::get_model_manager,
-    models::{Clients, CompletionRequest, CompletionResponse, ModelInfo},
+    models::{Clients, CompletionRequest, CompletionResponse, ModelInfo, Tool},
     ui::chat::ChatMessage,
 };
 
@@ -8,12 +8,13 @@ pub async fn complete_message(
     messages: Vec<ChatMessage>,
     client: Clients,
     model: String,
+    tools: Vec<Tool>,
 ) -> CompletionResponse {
     let request = CompletionRequest {
         messages: messages.iter().map(|m| m.clone().into()).collect(),
         model,
         temperature: None,
-        tools: None,
+        tools: Some(tools),
     };
     let result = client.complete_message(request).await;
     match result {
@@ -66,5 +67,16 @@ pub async fn load_models() -> Vec<ModelInfo> {
                 },
             ]
         }
+    }
+}
+
+pub async fn load_tools() -> Vec<crate::models::Tool> {
+    let manager = crate::mcp::get_tool_manager();
+    match manager.load_tools().await {
+        Ok(_) => match manager.get_tools() {
+            Ok(tools) => tools,
+            Err(_) => vec![],
+        },
+        Err(_) => vec![],
     }
 }
