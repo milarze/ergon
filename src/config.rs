@@ -366,7 +366,9 @@ mod tests {
         assert!(serialized.contains(
             "\"vllm\":{\"endpoint\":\"https://localhost:8000/v1/\",\"model\":\"google/gemma-3-270m\"}"
         ));
-        assert!(serialized.contains("\"mcp\":[{\"Stdio\":{\"command\":\"\",\"args\":[]}}]"));
+        assert!(serialized.contains(
+            "\"mcp\":[{\"Stdio\":{\"name\":\"Default Stdio MCP\",\"command\":\"\",\"args\":[]}}]"
+        ));
     }
 
     #[test]
@@ -445,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_with_mcp() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"name":"stdio-mcp",command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"name":"http-mcp",endpoint":"http://localhost:9000/v1/"}}]}"#;
+        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"name":"stdio-mcp","command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"name":"http-mcp","endpoint":"http://localhost:9000/v1/"}}]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai.api_key, "test_key");

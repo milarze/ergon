@@ -43,7 +43,7 @@ impl ToolManager {
                 .list_all_tools()
                 .await?
                 .into_iter()
-                .map(|t| <rmcp::model::Tool as Into<crate::models::Tool>>::into(t))
+                .map(<rmcp::model::Tool as Into<crate::models::Tool>>::into)
                 .collect();
             all_tools.extend(response);
         }
@@ -61,7 +61,7 @@ impl ToolManager {
                 .tools
                 .write()
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            *tools_lock = all_tools.into_iter().map(|t| t.into()).collect();
+            *tools_lock = all_tools.into_iter().collect();
         }
         Ok(())
     }
