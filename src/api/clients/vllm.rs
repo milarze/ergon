@@ -19,6 +19,7 @@ impl VllmClient {
             "{}/chat/completions",
             self.config.endpoint.trim_end_matches('/')
         );
+        log::info!("vLLMClient Request: {:?}", request);
         let response = client
             .post(url)
             .header("Content-Type", "application/json")

@@ -48,7 +48,7 @@ pub struct ModelManager {
 }
 
 impl ModelManager {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             models: Arc::new(RwLock::new(Vec::new())),
         }
@@ -128,12 +128,6 @@ impl ModelManager {
             .read()
             .map_err(|_| "Failed to acquire read lock")?;
         Ok(models.iter().find(|m| m.name == name).cloned())
-    }
-}
-
-impl Default for ModelManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
