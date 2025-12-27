@@ -247,6 +247,7 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            available_tools: vec![],
             awaiting_response: false,
         };
 
@@ -278,6 +279,7 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            available_tools: vec![],
             awaiting_response: false,
         };
 
@@ -319,6 +321,7 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            available_tools: vec![],
             awaiting_response: true,
         };
 
@@ -357,6 +360,7 @@ mod tests {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             }],
+            available_tools: vec![],
             awaiting_response: true,
         };
 

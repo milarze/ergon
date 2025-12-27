@@ -73,10 +73,7 @@ pub async fn load_models() -> Vec<ModelInfo> {
 pub async fn load_tools() -> Vec<crate::models::Tool> {
     let manager = crate::mcp::get_tool_manager();
     match manager.load_tools().await {
-        Ok(_) => match manager.get_tools() {
-            Ok(tools) => tools,
-            Err(_) => vec![],
-        },
+        Ok(_) => manager.get_tools().unwrap_or_default(),
         Err(_) => vec![],
     }
 }
