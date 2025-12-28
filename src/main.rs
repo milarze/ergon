@@ -5,9 +5,9 @@ pub fn main() -> iced::Result {
         .with_level(log::LevelFilter::Info)
         .init()
         .expect("Failed to initialize logger");
-    iced::application("Ergon", ergon::update, ergon::view)
+    iced::application(ergon::init, ergon::update, ergon::view)
         .theme(theme)
-        .run_with(ergon::init)
+        .run()
 }
 
 fn theme(state: &Ergon) -> iced::Theme {

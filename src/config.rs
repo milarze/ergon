@@ -115,7 +115,7 @@ impl Config {
         let settings_file_path = path.unwrap_or_else(Self::settings_file_path);
         if std::fs::exists(&settings_file_path).is_err() {
             let default_settings = Self {
-                theme: Theme::default(),
+                theme: Theme::Dark,
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
@@ -133,7 +133,7 @@ impl Config {
                 settings
             } else {
                 Self {
-                    theme: Theme::default(),
+                    theme: Theme::Dark,
                     openai: OpenAIConfig::default(),
                     anthropic: AnthropicConfig::default(),
                     vllm: VllmConfig::default(),
@@ -143,7 +143,7 @@ impl Config {
             }
         } else {
             Self {
-                theme: Theme::default(),
+                theme: Theme::Dark,
                 openai: OpenAIConfig::default(),
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
@@ -274,7 +274,7 @@ impl<'de> Deserialize<'de> for Config {
                             theme = Some(match theme_name {
                                 "Light" => Theme::Light,
                                 "Dark" => Theme::Dark,
-                                _ => Theme::default(),
+                                _ => Theme::Dark,
                             });
                         }
                         Fields::OpenAI => {
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.theme, Theme::default());
+        assert_eq!(config.theme, Theme::Dark);
     }
 
     #[test]
