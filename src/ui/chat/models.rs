@@ -1,6 +1,6 @@
 use iced::widget::markdown;
 
-use crate::models::{CompletionResponse, Message, ModelInfo, Tool};
+use crate::models::{CompletionResponse, Message, ModelInfo, Tool, ToolCall};
 
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
@@ -27,6 +27,8 @@ pub enum ChatAction {
     ModelsLoaded(Vec<ModelInfo>),
     ToolsLoaaded(Vec<Tool>),
     UrlClicked(String),
+    CallTool(ToolCall),
+    ToolResponseReceived(String),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
