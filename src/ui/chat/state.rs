@@ -138,8 +138,8 @@ impl State {
         Task::none()
     }
 
-    pub fn view(&self) -> Element<'_, ChatAction> {
-        let chat_window = column![self.build_message_list(), self.build_input_area(),]
+    pub fn view<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
+        let chat_window = column![self.build_message_list(theme), self.build_input_area(),]
             .spacing(10)
             .padding(10);
 
@@ -149,9 +149,9 @@ impl State {
             .into()
     }
 
-    fn build_message_list(&self) -> Element<'_, ChatAction> {
+    fn build_message_list<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
         let rows: Vec<Element<ChatAction>> =
-            self.messages.iter().map(Self::build_message_row).collect();
+            self.messages.iter().map(|msg| Self::build_message_row(msg, theme)).collect();
 
         scrollable(
             container(column(rows).spacing(10).padding(10))
@@ -162,7 +162,7 @@ impl State {
         .into()
     }
 
-    fn build_message_row(msg: &ChatMessage) -> Element<'_, ChatAction> {
+    fn build_message_row<'a>(msg: &'a ChatMessage, theme: &'a Theme) -> Element<'a, ChatAction> {
         let formatted_message = match msg.sender {
             Sender::User => "You: ".to_string(),
             Sender::Bot => "Bot: ".to_string(),
@@ -172,8 +172,9 @@ impl State {
             text(formatted_message),
             markdown(
                 &msg.markdown_items,
-                markdown::Settings::default(),
-                markdown::Style::from_palette(Theme::default().palette())
+                markdown::Settings::with_style(
+                    markdown::Style::from_palette(theme.palette())
+                )
             )
             .map(|url| ChatAction::UrlClicked(url.to_string())),
         ]
