@@ -17,6 +17,7 @@ pub struct State {
     selected_model: Option<String>,
     available_models: Vec<ModelInfo>,
     available_tools: Vec<Tool>,
+    pending_tool_calls: Vec<String>,
 }
 
 impl State {
@@ -41,6 +42,8 @@ impl State {
             ChatAction::ModelsLoaded(models) => self.on_models_loaded(models),
             ChatAction::UrlClicked(url) => self.on_url_clicked(url),
             ChatAction::ToolsLoaaded(tools) => self.on_tools_loaded(tools),
+            ChatAction::CallTool(_tool_call) => Task::none(),
+            ChatAction::ToolResponseReceived(_response) => Task::none(),
         }
     }
 
@@ -150,8 +153,11 @@ impl State {
     }
 
     fn build_message_list<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
-        let rows: Vec<Element<ChatAction>> =
-            self.messages.iter().map(|msg| Self::build_message_row(msg, theme)).collect();
+        let rows: Vec<Element<ChatAction>> = self
+            .messages
+            .iter()
+            .map(|msg| Self::build_message_row(msg, theme))
+            .collect();
 
         scrollable(
             container(column(rows).spacing(10).padding(10))
@@ -172,9 +178,7 @@ impl State {
             text(formatted_message),
             markdown(
                 &msg.markdown_items,
-                markdown::Settings::with_style(
-                    markdown::Style::from_palette(theme.palette())
-                )
+                markdown::Settings::with_style(markdown::Style::from_palette(theme.palette()))
             )
             .map(|url| ChatAction::UrlClicked(url.to_string())),
         ]
