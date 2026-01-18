@@ -1,19 +1,29 @@
 use iced::widget::markdown;
 
-use crate::models::{CompletionResponse, Message, ModelInfo, Tool};
+use crate::models::{CompletionResponse, Message, ModelInfo, Tool, ToolCall, ToolCallResult};
 
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
-    pub sender: Sender,
-    pub content: String,
+    pub message: Message,
     pub markdown_items: Vec<markdown::Item>,
 }
 
 impl From<ChatMessage> for Message {
     fn from(chat_message: ChatMessage) -> Self {
-        match chat_message.sender {
-            Sender::User => Message::user(chat_message.content),
-            Sender::Bot => Message::assistant(chat_message.content),
+        chat_message.message
+    }
+}
+
+impl From<Message> for ChatMessage {
+    fn from(message: Message) -> Self {
+        Self {
+            markdown_items: message
+                .content
+                .clone()
+                .iter()
+                .flat_map(|c| markdown::parse(c.as_text().unwrap_or_default()))
+                .collect(),
+            message,
         }
     }
 }
@@ -27,10 +37,6 @@ pub enum ChatAction {
     ModelsLoaded(Vec<ModelInfo>),
     ToolsLoaaded(Vec<Tool>),
     UrlClicked(String),
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum Sender {
-    User,
-    Bot,
+    CallTool(ToolCall),
+    ToolResponseReceived(Result<ToolCallResult, (String, String)>),
 }
