@@ -1,7 +1,10 @@
 use crate::{
     api::clients::get_model_manager,
-    models::{Clients, CompletionRequest, CompletionResponse, ModelInfo, Tool},
-    ui::chat::ChatMessage,
+    models::{
+        Clients, CompletionRequest, CompletionResponse, Content, ModelInfo, Tool, ToolCall,
+        ToolCallResult,
+    },
+    ui::chat::models::ChatMessage,
 };
 
 pub async fn complete_message(
@@ -11,7 +14,7 @@ pub async fn complete_message(
     tools: Vec<Tool>,
 ) -> CompletionResponse {
     let request = CompletionRequest {
-        messages: messages.iter().map(|m| m.clone().into()).collect(),
+        messages: messages.iter().map(|cm| cm.clone().into()).collect(),
         model,
         temperature: None,
         tools: Some(tools),
@@ -76,4 +79,45 @@ pub async fn load_tools() -> Vec<crate::models::Tool> {
         Ok(_) => manager.get_tools().unwrap_or_default(),
         Err(_) => vec![],
     }
+}
+
+pub async fn call_tool(tool_call: ToolCall) -> Result<ToolCallResult, (String, String)> {
+    let manager = crate::mcp::get_tool_manager();
+    let call_id = tool_call.id.clone();
+    let client = manager
+        .get_client_by_tool_call(&tool_call.function.name)
+        .map_err(|e| (call_id.clone(), e.to_string()))?
+        .ok_or_else(|| {
+            (
+                call_id.clone(),
+                "Client not found for tool call".to_string(),
+            )
+        })?;
+    let args_json = serde_json::to_value(&tool_call.function.arguments)
+        .map_err(|e| (call_id.clone(), e.to_string()))?;
+    let function_name = tool_call.function.name.clone();
+    let client_function_name = function_name
+        .split("::")
+        .nth(1)
+        .unwrap_or(&function_name)
+        .to_string();
+    let request_params = rmcp::model::CallToolRequestParam {
+        name: client_function_name.into(),
+        arguments: Some(args_json.as_object().cloned().unwrap_or_default()),
+    };
+    let tool_result = client
+        .call_tool(request_params)
+        .await
+        .map_err(|e| (call_id.clone(), e.to_string()))?;
+    let json_string = serde_json::to_string(&tool_result).map_err(|e| {
+        (
+            call_id.clone(),
+            format!("Failed to serialize tool result: {}", e),
+        )
+    })?;
+    Ok(ToolCallResult {
+        success: true,
+        id: call_id.clone(),
+        contents: vec![Content::tool_result(call_id, json_string)],
+    })
 }
