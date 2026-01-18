@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use crate::config::McpConfig;
 use anyhow::Result;
@@ -14,36 +17,48 @@ pub type McpClient = RunningService<RoleClient, ()>;
 
 #[derive(Debug)]
 pub struct ToolManager {
-    mcp_clients: Arc<RwLock<Vec<McpClient>>>,
+    /// Map of MCP client name to MCP client instance
+    mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    /// List of all available tools
+    /// Each tool's name is prefixed with the MCP client name to ensure uniqueness
     tools: Arc<RwLock<Vec<crate::models::Tool>>>,
 }
 
 impl ToolManager {
     fn new() -> Self {
         Self {
-            mcp_clients: Arc::new(RwLock::new(Vec::new())),
+            mcp_clients: Arc::new(RwLock::new(HashMap::new())),
             tools: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
     pub async fn load_tools(&self) -> Result<()> {
-        let clients: Vec<McpClient> = join_all(
+        let clients: HashMap<String, Arc<McpClient>> = join_all(
             crate::config::Config::default()
                 .mcp_configs
                 .iter()
-                .map(async |config| init(config.clone()).await),
+                .map(async |config| (config.name().to_string(), init(config.clone()).await)),
         )
         .await
         .into_iter()
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|(name, result)| result.map(|client| (name, Arc::new(client))))
+        .collect::<Result<HashMap<String, Arc<McpClient>>, _>>()?;
 
         let mut all_tools: Vec<crate::models::Tool> = Vec::new();
-        for client in clients.iter() {
+        for (client_name, client) in clients.iter() {
             let response: Vec<crate::models::Tool> = client
                 .list_all_tools()
                 .await?
                 .into_iter()
-                .map(<rmcp::model::Tool as Into<crate::models::Tool>>::into)
+                .map(|tool| {
+                    let mut tool = tool.into();
+                    match &mut tool {
+                        crate::models::Tool::Function(func) => {
+                            func.name = format!("{}::{}", client_name, func.name);
+                        }
+                    };
+                    tool
+                })
                 .collect();
             all_tools.extend(response);
         }
@@ -72,6 +87,24 @@ impl ToolManager {
             .read()
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
         Ok(tools_lock.clone())
+    }
+
+    pub fn get_client_by_tool_call(&self, tool_call_name: &str) -> Result<Option<Arc<McpClient>>> {
+        let parts: Vec<&str> = tool_call_name.splitn(2, "::").collect();
+        if parts.len() != 2 {
+            return Ok(None);
+        }
+        let client_name = parts[0];
+
+        let mcpclients = self
+            .mcp_clients
+            .read()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        if let Some(client) = mcpclients.get(client_name) {
+            Ok(Some(client.to_owned()))
+        } else {
+            Ok(None)
+        }
     }
 }
 
