@@ -128,6 +128,34 @@ impl Message {
             reasoning_content: None,
         }
     }
+
+    pub fn tool_result(
+        tool_use_id: impl ToString,
+        content: impl ToString,
+        is_error: Option<bool>,
+    ) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: vec![Content::ToolResult {
+                tool_use_id: tool_use_id.to_string(),
+                content: content.to_string(),
+                is_error,
+            }],
+            tool_calls: None,
+            reasoning_content: None,
+        }
+    }
+
+    pub fn text_content(&self) -> Vec<&String> {
+        self.content
+            .iter()
+            .filter_map(|c| match c {
+                Content::Text { text } => Some(text),
+                Content::ToolResult { content, .. } => Some(content),
+                _ => None,
+            })
+            .collect::<Vec<&String>>()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -183,11 +211,22 @@ pub struct ToolFunction {
     pub arguments: String,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ToolResult {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCallResult {
+    pub id: String,
     pub success: bool,
     pub contents: Vec<Content>,
+}
+
+impl From<ToolCallResult> for Message {
+    fn from(tool_call_result: ToolCallResult) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: tool_call_result.contents,
+            tool_calls: None,
+            reasoning_content: None,
+        }
+    }
 }
 
 impl Content {
