@@ -851,6 +851,7 @@ dependencies = [
  "home",
  "iced",
  "iced_aw",
+ "iced_fonts",
  "log",
  "rand",
  "reqwest 0.13.1",

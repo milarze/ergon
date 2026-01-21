@@ -54,7 +54,7 @@ impl ToolManager {
                     let mut tool = tool.into();
                     match &mut tool {
                         crate::models::Tool::Function(func) => {
-                            func.name = format!("{}::{}", client_name, func.name);
+                            func.name = format!("__{}__{}", client_name, func.name);
                         }
                     };
                     tool
@@ -90,7 +90,7 @@ impl ToolManager {
     }
 
     pub fn get_client_by_tool_call(&self, tool_call_name: &str) -> Result<Option<Arc<McpClient>>> {
-        let parts: Vec<&str> = tool_call_name.splitn(2, "::").collect();
+        let parts: Vec<&str> = tool_call_name.splitn(2, "__").collect();
         if parts.len() != 2 {
             return Ok(None);
         }
