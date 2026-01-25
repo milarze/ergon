@@ -379,7 +379,7 @@ mod tests {
             "\"vllm\":{\"endpoint\":\"https://localhost:8000/v1/\",\"model\":\"google/gemma-3-270m\"}"
         ));
         assert!(serialized.contains(
-            "\"mcp\":[{\"Stdio\":{\"name\":\"Default Stdio MCP\",\"command\":\"\",\"args\":[]}}]"
+            "\"mcp\":[{\"Stdio\":{\"name\":\"default-stdio-mcp\",\"command\":\"\",\"args\":[]}}]"
         ));
     }
 

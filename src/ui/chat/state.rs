@@ -61,29 +61,28 @@ impl State {
         if !self.input_value.is_empty() {
             let user_message = self.build_pending_message();
             self.messages.push(user_message);
-
-            let default_model = "gpt-4o-mini".to_string();
-            let model_name = self.selected_model.as_ref().unwrap_or(&default_model);
-            let model = get_model_manager()
-                .find_model(model_name)
-                .unwrap_or(None)
-                .unwrap_or(ModelInfo {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                    client: Clients::OpenAI,
-                });
-            Task::perform(
-                complete_message(
-                    self.messages.clone(),
-                    model.client.clone(),
-                    model.id.clone(),
-                    self.available_tools.clone(),
-                ),
-                ChatAction::ResponseReceived,
-            )
-        } else {
-            Task::none()
         }
+
+        let default_model = "gpt-4o-mini".to_string();
+        let model_name = self.selected_model.as_ref().unwrap_or(&default_model);
+        let model = get_model_manager()
+            .find_model(model_name)
+            .unwrap_or(None)
+            .unwrap_or(ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            });
+        log::info!("{:?}", self.messages);
+        Task::perform(
+            complete_message(
+                self.messages.clone(),
+                model.client.clone(),
+                model.id.clone(),
+                self.available_tools.clone(),
+            ),
+            ChatAction::ResponseReceived,
+        )
     }
 
     fn build_pending_message(&self) -> ChatMessage {
@@ -94,9 +93,9 @@ impl State {
     }
 
     fn on_response_received(&mut self, response: CompletionResponse) -> Task<ChatAction> {
-        log::info!("Response received: {:?}", response);
         let choices = &response.choices;
         let response_messages = self.get_response_content(choices);
+        log::info!("Response messages: {:?}", response_messages);
         let tool_calls = self.get_response_tool_calls(choices);
         let bot_messages = response_messages
             .into_iter()
@@ -124,9 +123,23 @@ impl State {
                 .message
                 .iter()
                 .flat_map(|m| {
-                    m.content
+                    let mut contents = m
+                        .content
                         .iter()
-                        .filter_map(|c| c.as_text().map(String::from))
+                        .map(|c| c.as_text().map(String::from).unwrap_or_default())
+                        .collect::<Vec<_>>();
+                    if m.tool_calls.is_some() && contents.is_empty() {
+                        let tool_call_content = m
+                            .tool_calls
+                            .clone()
+                            .unwrap_or(vec![])
+                            .iter()
+                            .map(|tc| format!("Tool call to function: {}", tc.function.name))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        contents.push(format!("Tool calls made: {}", tool_call_content));
+                    }
+                    contents
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -168,7 +181,6 @@ impl State {
     }
 
     fn on_tools_loaded(&mut self, tools: Vec<crate::models::Tool>) -> Task<ChatAction> {
-        log::info!("Tools loaded: {:?}", tools);
         self.available_tools = tools;
         Task::none()
     }
@@ -183,7 +195,6 @@ impl State {
     ) -> Task<ChatAction> {
         match response {
             Ok(result) => {
-                log::info!("Tool call succeeded: {:?}", result);
                 self.pending_tool_calls.remove(&result.id);
                 let message: Message = result.into();
                 self.messages.push(message.into())
@@ -195,7 +206,11 @@ impl State {
                     .push(Message::tool_result(call_id, error_message, Some(true)).into())
             }
         }
-        Task::none()
+        if self.pending_tool_calls.is_empty() {
+            self.on_send_message()
+        } else {
+            Task::none()
+        }
     }
 
     fn on_url_clicked(&mut self, url: String) -> Task<ChatAction> {
