@@ -90,21 +90,53 @@ impl ToolManager {
     }
 
     pub fn get_client_by_tool_call(&self, tool_call_name: &str) -> Result<Option<Arc<McpClient>>> {
-        let parts: Vec<&str> = tool_call_name.splitn(2, "__").collect();
-        if parts.len() != 2 {
-            return Ok(None);
-        }
-        let client_name = parts[0];
+        let (client_name, tool_name) =
+            match self.tool_client_and_name_by_tool_call(tool_call_name.to_string())? {
+                Some((client_name, tool_name)) => (client_name, tool_name),
+                None => {
+                    return Ok(None);
+                }
+            };
+
+        log::info!(
+            "Looking for MCP client '{}' for tool call '{}'",
+            client_name,
+            tool_name
+        );
 
         let mcpclients = self
             .mcp_clients
             .read()
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        if let Some(client) = mcpclients.get(client_name) {
+        if let Some(client) = mcpclients.get(&client_name) {
             Ok(Some(client.to_owned()))
         } else {
             Ok(None)
         }
+    }
+
+    pub fn tool_client_and_name_by_tool_call(
+        &self,
+        tool_call_name: String,
+    ) -> Result<Option<(String, String)>> {
+        let parts: Vec<&str> = tool_call_name
+            .strip_prefix("__")
+            .unwrap_or(&tool_call_name)
+            .splitn(2, "__")
+            .collect();
+        if parts.len() != 2 {
+            return Ok(None);
+        }
+        let client_name = parts[0];
+        let tool_name = parts[1].to_string();
+
+        log::info!(
+            "Looking for MCP client '{}' for tool call '{}'",
+            client_name,
+            tool_name
+        );
+
+        Ok(Some((client_name.to_string(), tool_name)))
     }
 }
 
