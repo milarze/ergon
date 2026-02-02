@@ -15,7 +15,7 @@ serde = "1.0.228"
 serde_json = "1.0.149"
 rmcp = { version = "0.12.0", features = ["client", "transport-io", "transport-streamable-http-client-reqwest", "transport-child-process"] }
 simple_logger = "5.0.0"
-slab = "0.4.11"
+slab = "0.4.12"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 tokio = { version = "1.48.0", features = ["process"] }
