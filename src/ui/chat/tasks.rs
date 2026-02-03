@@ -16,6 +16,20 @@ pub async fn complete_message(
     model: String,
     tools: Vec<Tool>,
 ) -> CompletionResponse {
+    log::info!(
+        "message roles: {:?}",
+        messages
+            .iter()
+            .map(|m| m.message.role.clone())
+            .collect::<Vec<String>>()
+    );
+    log::info!(
+        "message contents: {:?}",
+        messages
+            .iter()
+            .map(|m| m.message.content.clone())
+            .collect::<Vec<Vec<Content>>>()
+    );
     let request = CompletionRequest {
         messages: messages.iter().map(|cm| cm.clone().into()).collect(),
         model,

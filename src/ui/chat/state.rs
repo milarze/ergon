@@ -73,7 +73,6 @@ impl State {
                 id: "gpt-4o-mini".to_string(),
                 client: Clients::OpenAI,
             });
-        log::info!("{:?}", self.messages);
         Task::perform(
             complete_message(
                 self.messages.clone(),
@@ -94,13 +93,23 @@ impl State {
 
     fn on_response_received(&mut self, response: CompletionResponse) -> Task<ChatAction> {
         let choices = &response.choices;
-        let response_messages = self.get_response_content(choices);
-        log::info!("Response messages: {:?}", response_messages);
+        self.input_value.clear();
+        if choices.is_empty() {
+            self.messages
+                .push(Message::assistant("Error: No response from model.".to_string()).into());
+            self.input_value.clear();
+            self.awaiting_response = false;
+            return Task::none();
+        }
+        self.messages.append(
+            choices[0]
+                .message
+                .iter()
+                .map(|m| m.clone().into())
+                .collect::<Vec<_>>()
+                .as_mut(),
+        );
         let tool_calls = self.get_response_tool_calls(choices);
-        let bot_messages = response_messages
-            .into_iter()
-            .map(|content| self.build_response_message(content));
-        self.messages.append(&mut bot_messages.collect::<Vec<_>>());
         if !tool_calls.is_empty() {
             tool_calls.iter().for_each(|tool_call| {
                 self.pending_tool_calls.insert(tool_call.id.clone());
@@ -111,39 +120,8 @@ impl State {
                     .map(|tool_call| Task::perform(async move { tool_call }, ChatAction::CallTool)),
             )
         } else {
-            self.input_value.clear();
             self.awaiting_response = false;
             Task::none()
-        }
-    }
-
-    fn get_response_content(&self, choices: &[crate::models::Choice]) -> Vec<String> {
-        if !choices.is_empty() {
-            choices[0]
-                .message
-                .iter()
-                .flat_map(|m| {
-                    let mut contents = m
-                        .content
-                        .iter()
-                        .map(|c| c.as_text().map(String::from).unwrap_or_default())
-                        .collect::<Vec<_>>();
-                    if m.tool_calls.is_some() && contents.is_empty() {
-                        let tool_call_content = m
-                            .tool_calls
-                            .clone()
-                            .unwrap_or(vec![])
-                            .iter()
-                            .map(|tc| format!("Tool call to function: {}", tc.function.name))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        contents.push(format!("Tool calls made: {}", tool_call_content));
-                    }
-                    contents
-                })
-                .collect::<Vec<_>>()
-        } else {
-            vec!["Error: No response from model.".to_string()]
         }
     }
 
@@ -156,13 +134,6 @@ impl State {
                 .collect::<Vec<_>>()
         } else {
             vec![]
-        }
-    }
-
-    fn build_response_message(&self, content: String) -> ChatMessage {
-        ChatMessage {
-            message: Message::assistant(content.clone()),
-            markdown_items: markdown::parse(&content).collect(),
         }
     }
 
@@ -250,16 +221,20 @@ impl State {
         message: &'a ChatMessage,
         theme: &'a Theme,
     ) -> Element<'a, ChatAction> {
-        let formatted_message = role.to_uppercase();
-
+        let color = match role {
+            "user" => theme.palette().primary,
+            "assistant" => theme.palette().success,
+            _ => theme.palette().text,
+        };
         row![
-            text(formatted_message),
+            text(role).width(Length::Shrink).color(color),
             markdown(
                 &message.markdown_items,
                 markdown::Settings::with_style(markdown::Style::from_palette(theme.palette()))
             )
             .map(|url| ChatAction::UrlClicked(url.to_string()))
         ]
+        .spacing(10)
         .into()
     }
 

@@ -23,6 +23,8 @@ pub trait OpenAICompatible {
             "tools": request.tools,
         });
 
+        log::info!("OpenAIClient: Sending request to {}", url);
+        log::info!("OpenAIClient: Request payload: {}", json_request);
         let mut req = client.post(url);
         if let Some(api_key) = self.api_key() {
             req = req.header("Authorization", format!("Bearer {}", api_key));
