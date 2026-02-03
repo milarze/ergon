@@ -99,6 +99,8 @@ pub struct Message {
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl Message {
@@ -108,6 +110,7 @@ impl Message {
             content: vec![Content::text(content)],
             tool_calls: None,
             reasoning_content: None,
+            tool_call_id: None,
         }
     }
 
@@ -117,6 +120,7 @@ impl Message {
             content: vec![Content::text(content)],
             tool_calls: None,
             reasoning_content: None,
+            tool_call_id: None,
         }
     }
 
@@ -126,7 +130,37 @@ impl Message {
             content: vec![Content::text(content)],
             tool_calls: None,
             reasoning_content: None,
+            tool_call_id: None,
         }
+    }
+
+    pub fn tool_result(
+        tool_use_id: impl ToString,
+        content: impl ToString,
+        is_error: Option<bool>,
+    ) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: vec![Content::ToolResult {
+                tool_use_id: tool_use_id.to_string(),
+                content: content.to_string(),
+                is_error,
+            }],
+            tool_calls: None,
+            reasoning_content: None,
+            tool_call_id: Some(tool_use_id.to_string()),
+        }
+    }
+
+    pub fn text_content(&self) -> Vec<&String> {
+        self.content
+            .iter()
+            .filter_map(|c| match c {
+                Content::Text { text } => Some(text),
+                Content::ToolResult { content, .. } => Some(content),
+                _ => None,
+            })
+            .collect::<Vec<&String>>()
     }
 }
 
@@ -183,11 +217,23 @@ pub struct ToolFunction {
     pub arguments: String,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ToolResult {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCallResult {
+    pub id: String,
     pub success: bool,
     pub contents: Vec<Content>,
+}
+
+impl From<ToolCallResult> for Message {
+    fn from(tool_call_result: ToolCallResult) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: tool_call_result.contents,
+            tool_calls: None,
+            reasoning_content: None,
+            tool_call_id: Some(tool_call_result.id),
+        }
+    }
 }
 
 impl Content {
@@ -240,10 +286,179 @@ impl Content {
     }
 
     /// Get the text content if this is a Text variant
-    pub fn as_text(&self) -> Option<&str> {
+    /// This is useful for rendering messages in markdown
+    /// It is meant only for rendering purposes
+    pub fn as_text(&self) -> Option<String> {
         match self {
-            Content::Text { text } => Some(text.as_str()),
+            Content::Text { text } => Some(text.clone()),
+            Content::ToolUse { id, name, input } => Some(format!(
+                "Tool Use - ID: {}, Name: {}, Input: {}",
+                id, name, input
+            )),
+            Content::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
+                if let Some(true) = is_error {
+                    Some(format!(
+                        "Tool Result (Error) - Tool Use ID: {}, Content: {}",
+                        tool_use_id, content
+                    ))
+                } else {
+                    Some(format!(
+                        "Tool Result - Tool Use ID: {}, Content: {}",
+                        tool_use_id, content
+                    ))
+                }
+            }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_text_content_serialization() {
+        let content = Content::text("Hello, GPT!");
+        let json = serde_json::to_value(&content).unwrap();
+
+        assert_eq!(json["type"], "text");
+        assert_eq!(json["text"], "Hello, GPT!");
+    }
+
+    #[test]
+    fn test_text_content_deserialization() {
+        let json = r#"{"type": "text", "text": "Hello from OpenAI!"}"#;
+        let content: Content = serde_json::from_str(json).unwrap();
+
+        match content {
+            Content::Text { text } => assert_eq!(text, "Hello from OpenAI!"),
+            _ => panic!("Expected Text variant"),
+        }
+    }
+
+    #[test]
+    fn test_image_url_serialization() {
+        let content = Content::image_url("https://example.com/image.jpg");
+        let json = serde_json::to_value(&content).unwrap();
+
+        assert_eq!(json["type"], "image_url");
+        assert_eq!(json["image_url"]["url"], "https://example.com/image.jpg");
+        assert!(json["image_url"].get("detail").is_none());
+    }
+
+    #[test]
+    fn test_image_url_with_detail_serialization() {
+        let content = Content::image_url_with_detail("https://example.com/image.jpg", "high");
+        let json = serde_json::to_value(&content).unwrap();
+
+        assert_eq!(json["type"], "image_url");
+        assert_eq!(json["image_url"]["url"], "https://example.com/image.jpg");
+        assert_eq!(json["image_url"]["detail"], "high");
+    }
+
+    #[test]
+    fn test_image_url_deserialization() {
+        let json = r#"{
+            "type": "image_url",
+            "image_url": {
+                "url": "https://example.com/test.png",
+                "detail": "low"
+            }
+        }"#;
+        let content: Content = serde_json::from_str(json).unwrap();
+
+        match content {
+            Content::ImageUrl { image_url } => {
+                assert_eq!(image_url.url, "https://example.com/test.png");
+                assert_eq!(image_url.detail, Some("low".to_string()));
+            }
+            _ => panic!("Expected ImageUrl variant"),
+        }
+    }
+
+    #[test]
+    fn test_message_with_text_and_image() {
+        let message = Message {
+            role: "user".to_string(),
+            content: vec![
+                Content::text("What's in this image?"),
+                Content::image_url_with_detail("https://example.com/photo.jpg", "high"),
+            ],
+            tool_calls: None,
+            reasoning_content: None,
+            tool_call_id: None,
+        };
+
+        let json = serde_json::to_value(&message).unwrap();
+
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"].as_array().unwrap().len(), 2);
+        assert_eq!(json["content"][0]["type"], "text");
+        assert_eq!(json["content"][0]["text"], "What's in this image?");
+        assert_eq!(json["content"][1]["type"], "image_url");
+        assert_eq!(
+            json["content"][1]["image_url"]["url"],
+            "https://example.com/photo.jpg"
+        );
+        assert_eq!(json["content"][1]["image_url"]["detail"], "high");
+    }
+
+    #[test]
+    fn test_completion_request_serialization() {
+        let request = CompletionRequest {
+            model: "gpt-4".to_string(),
+            messages: vec![Message::user("Hello!")],
+            temperature: Some(0.7),
+            tools: None,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(json["model"], "gpt-4");
+        assert_eq!(json["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(json["messages"][0]["role"], "user");
+        assert_eq!(json["messages"][0]["content"][0]["type"], "text");
+        assert_eq!(json["messages"][0]["content"][0]["text"], "Hello!");
+        // Check temperature exists and is close to 0.7 (floating point precision)
+        assert!((json["temperature"].as_f64().unwrap() - 0.7).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_multimodal_message_serialization() {
+        let message = Message {
+            role: "user".to_string(),
+            content: vec![
+                Content::text("Analyze these images:"),
+                Content::image_url("https://example.com/img1.jpg"),
+                Content::image_url("https://example.com/img2.jpg"),
+            ],
+            tool_calls: None,
+            reasoning_content: None,
+            tool_call_id: None,
+        };
+
+        let json = serde_json::to_value(&message).unwrap();
+        let content_array = json["content"].as_array().unwrap();
+
+        assert_eq!(content_array.len(), 3);
+        assert_eq!(content_array[0]["type"], "text");
+        assert_eq!(content_array[1]["type"], "image_url");
+        assert_eq!(content_array[2]["type"], "image_url");
+    }
+
+    #[test]
+    fn test_tool_result_message_serialization() {
+        let message = Message::tool_result("tool_use_123", "Tool executed successfully", None);
+        let json = serde_json::to_value(&message).unwrap();
+
+        assert_eq!(json["role"], "tool");
+        assert_eq!(json["content"][0]["content"], "Tool executed successfully");
+        assert_eq!(json["content"][0]["tool_use_id"], "tool_use_123");
+        assert_eq!(json["tool_call_id"], "tool_use_123");
     }
 }

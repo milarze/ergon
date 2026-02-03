@@ -75,7 +75,7 @@ pub enum McpConfig {
 impl Default for McpConfig {
     fn default() -> Self {
         McpConfig::Stdio(McpStdioConfig {
-            name: "Default Stdio MCP".to_string(),
+            name: "default-stdio-mcp".to_string(),
             command: "".to_string(),
             args: vec![],
         })
@@ -85,8 +85,8 @@ impl Default for McpConfig {
 impl Display for McpConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            McpConfig::Stdio(_) => write!(f, "Stdio"),
-            McpConfig::StreamableHttp(_) => write!(f, "StreamableHttp"),
+            McpConfig::Stdio(_) => write!(f, "Stdio: {}", self.name()),
+            McpConfig::StreamableHttp(_) => write!(f, "StreamableHttp: {}", self.name()),
         }
     }
 }
@@ -96,6 +96,18 @@ impl McpConfig {
         match self {
             McpConfig::Stdio(cfg) => &cfg.name,
             McpConfig::StreamableHttp(cfg) => &cfg.name,
+        }
+    }
+
+    pub fn validate_name(&self) -> bool {
+        let name = self.name();
+        name.matches(r"^[a-zA-Z0-9_\-]+$").count() == 1
+    }
+
+    pub fn set_name(&mut self, new_name: String) {
+        match self {
+            McpConfig::Stdio(cfg) => cfg.name = new_name,
+            McpConfig::StreamableHttp(cfg) => cfg.name = new_name,
         }
     }
 }
@@ -367,7 +379,7 @@ mod tests {
             "\"vllm\":{\"endpoint\":\"https://localhost:8000/v1/\",\"model\":\"google/gemma-3-270m\"}"
         ));
         assert!(serialized.contains(
-            "\"mcp\":[{\"Stdio\":{\"name\":\"Default Stdio MCP\",\"command\":\"\",\"args\":[]}}]"
+            "\"mcp\":[{\"Stdio\":{\"name\":\"default-stdio-mcp\",\"command\":\"\",\"args\":[]}}]"
         ));
     }
 

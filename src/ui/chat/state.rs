@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use iced::{
     widget::{button, column, container, markdown, pick_list, row, scrollable, text, text_input},
     Alignment, Element, Length, Task, Theme,
@@ -5,8 +7,10 @@ use iced::{
 
 use crate::{
     api::clients::get_model_manager,
-    models::{Clients, CompletionResponse, ModelInfo, Tool},
-    ui::chat::{complete_message, load_models, load_tools, ChatAction, ChatMessage, Sender},
+    models::{Clients, CompletionResponse, Message, ModelInfo, Tool, ToolCall, ToolCallResult},
+    ui::chat::{
+        call_tool, complete_message, load_models, load_tools, models::ChatMessage, ChatAction,
+    },
 };
 
 #[derive(Debug, Default, Clone)]
@@ -17,6 +21,7 @@ pub struct State {
     selected_model: Option<String>,
     available_models: Vec<ModelInfo>,
     available_tools: Vec<Tool>,
+    pending_tool_calls: HashSet<String>,
 }
 
 impl State {
@@ -41,6 +46,8 @@ impl State {
             ChatAction::ModelsLoaded(models) => self.on_models_loaded(models),
             ChatAction::UrlClicked(url) => self.on_url_clicked(url),
             ChatAction::ToolsLoaaded(tools) => self.on_tools_loaded(tools),
+            ChatAction::CallTool(tool_call) => self.on_tool_called(tool_call),
+            ChatAction::ToolResponseReceived(response) => self.on_tool_response_received(response),
         }
     }
 
@@ -54,63 +61,80 @@ impl State {
         if !self.input_value.is_empty() {
             let user_message = self.build_pending_message();
             self.messages.push(user_message);
-
-            let default_model = "gpt-4o-mini".to_string();
-            let model_name = self.selected_model.as_ref().unwrap_or(&default_model);
-            let model = get_model_manager()
-                .find_model(model_name)
-                .unwrap_or(None)
-                .unwrap_or(ModelInfo {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                    client: Clients::OpenAI,
-                });
-            Task::perform(
-                complete_message(
-                    self.messages.clone(),
-                    model.client.clone(),
-                    model.id.clone(),
-                    self.available_tools.clone(),
-                ),
-                ChatAction::ResponseReceived,
-            )
-        } else {
-            Task::none()
         }
+
+        let default_model = "gpt-4o-mini".to_string();
+        let model_name = self.selected_model.as_ref().unwrap_or(&default_model);
+        let model = get_model_manager()
+            .find_model(model_name)
+            .unwrap_or(None)
+            .unwrap_or(ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            });
+        Task::perform(
+            complete_message(
+                self.messages.clone(),
+                model.client.clone(),
+                model.id.clone(),
+                self.available_tools.clone(),
+            ),
+            ChatAction::ResponseReceived,
+        )
     }
 
     fn build_pending_message(&self) -> ChatMessage {
         ChatMessage {
-            sender: Sender::User,
-            content: self.input_value.clone(),
+            message: Message::user(self.input_value.clone()),
             markdown_items: markdown::parse(&self.input_value).collect(),
         }
     }
 
     fn on_response_received(&mut self, response: CompletionResponse) -> Task<ChatAction> {
-        log::info!("Response received: {:?}", response);
-        let response_messages = if !response.choices.is_empty() {
-            response.choices[0]
+        let choices = &response.choices;
+        self.input_value.clear();
+        if choices.is_empty() {
+            self.messages
+                .push(Message::assistant("Error: No response from model.".to_string()).into());
+            self.input_value.clear();
+            self.awaiting_response = false;
+            return Task::none();
+        }
+        self.messages.append(
+            choices[0]
                 .message
                 .iter()
-                .flat_map(|m| {
-                    m.content
-                        .iter()
-                        .filter_map(|c| c.as_text().map(String::from))
-                })
-                .collect()
+                .map(|m| m.clone().into())
+                .collect::<Vec<_>>()
+                .as_mut(),
+        );
+        let tool_calls = self.get_response_tool_calls(choices);
+        if !tool_calls.is_empty() {
+            tool_calls.iter().for_each(|tool_call| {
+                self.pending_tool_calls.insert(tool_call.id.clone());
+            });
+            Task::batch(
+                tool_calls
+                    .into_iter()
+                    .map(|tool_call| Task::perform(async move { tool_call }, ChatAction::CallTool)),
+            )
         } else {
-            vec!["Error: No response from model.".to_string()]
-        };
-        let bot_messages = response_messages.into_iter().map(|content| ChatMessage {
-            sender: Sender::Bot,
-            markdown_items: markdown::parse(&content).collect(),
-            content,
-        });
-        self.messages.append(&mut bot_messages.collect::<Vec<_>>());
-        self.input_value.clear();
-        self.awaiting_response = false;
-        Task::none()
+            self.awaiting_response = false;
+            Task::none()
+        }
+    }
+
+    fn get_response_tool_calls(&self, choices: &[crate::models::Choice]) -> Vec<ToolCall> {
+        if !choices.is_empty() {
+            choices[0]
+                .message
+                .iter()
+                .flat_map(|m| m.tool_calls.clone().unwrap_or(vec![]))
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        }
     }
 
     fn on_model_selected(&mut self, model_name: String) -> Task<ChatAction> {
@@ -128,9 +152,36 @@ impl State {
     }
 
     fn on_tools_loaded(&mut self, tools: Vec<crate::models::Tool>) -> Task<ChatAction> {
-        log::info!("Tools loaded: {:?}", tools);
         self.available_tools = tools;
         Task::none()
+    }
+
+    fn on_tool_called(&mut self, tool_call: ToolCall) -> Task<ChatAction> {
+        Task::perform(call_tool(tool_call), ChatAction::ToolResponseReceived)
+    }
+
+    fn on_tool_response_received(
+        &mut self,
+        response: Result<ToolCallResult, (String, String)>,
+    ) -> Task<ChatAction> {
+        match response {
+            Ok(result) => {
+                self.pending_tool_calls.remove(&result.id);
+                let message: Message = result.into();
+                self.messages.push(message.into())
+            }
+            Err((call_id, error_message)) => {
+                log::error!("Tool call failed: {}", error_message);
+                self.pending_tool_calls.remove(&call_id);
+                self.messages
+                    .push(Message::tool_result(call_id, error_message, Some(true)).into())
+            }
+        }
+        if self.pending_tool_calls.is_empty() {
+            self.on_send_message()
+        } else {
+            Task::none()
+        }
     }
 
     fn on_url_clicked(&mut self, url: String) -> Task<ChatAction> {
@@ -150,8 +201,11 @@ impl State {
     }
 
     fn build_message_list<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
-        let rows: Vec<Element<ChatAction>> =
-            self.messages.iter().map(|msg| Self::build_message_row(msg, theme)).collect();
+        let rows: Vec<Element<ChatAction>> = self
+            .messages
+            .iter()
+            .map(|msg| Self::build_message_row(&msg.message.role, msg, theme))
+            .collect();
 
         scrollable(
             container(column(rows).spacing(10).padding(10))
@@ -162,22 +216,25 @@ impl State {
         .into()
     }
 
-    fn build_message_row<'a>(msg: &'a ChatMessage, theme: &'a Theme) -> Element<'a, ChatAction> {
-        let formatted_message = match msg.sender {
-            Sender::User => "You: ".to_string(),
-            Sender::Bot => "Bot: ".to_string(),
+    fn build_message_row<'a>(
+        role: &'a str,
+        message: &'a ChatMessage,
+        theme: &'a Theme,
+    ) -> Element<'a, ChatAction> {
+        let color = match role {
+            "user" => theme.palette().primary,
+            "assistant" => theme.palette().success,
+            _ => theme.palette().text,
         };
-
         row![
-            text(formatted_message),
+            text(role).width(Length::Shrink).color(color),
             markdown(
-                &msg.markdown_items,
-                markdown::Settings::with_style(
-                    markdown::Style::from_palette(theme.palette())
-                )
+                &message.markdown_items,
+                markdown::Settings::with_style(markdown::Style::from_palette(theme.palette()))
             )
-            .map(|url| ChatAction::UrlClicked(url.to_string())),
+            .map(|url| ChatAction::UrlClicked(url.to_string()))
         ]
+        .spacing(10)
         .into()
     }
 
@@ -250,6 +307,7 @@ mod tests {
             }],
             available_tools: vec![],
             awaiting_response: false,
+            pending_tool_calls: HashSet::new(),
         };
 
         let message = ChatAction::SendMessage;
@@ -259,8 +317,11 @@ mod tests {
 
         assert_eq!(state.messages.len(), 1);
 
-        assert_eq!(state.messages[0].sender, Sender::User);
-        assert_eq!(state.messages[0].content, "This is a test");
+        assert_eq!(state.messages[0].message.role, "user");
+        assert_eq!(
+            state.messages[0].message.text_content().first(),
+            Some(&&"This is a test".to_string())
+        );
 
         assert!(result_action.is_ok());
     }
@@ -282,6 +343,7 @@ mod tests {
             }],
             available_tools: vec![],
             awaiting_response: false,
+            pending_tool_calls: HashSet::new(),
         };
 
         let message = ChatAction::SendMessage;
@@ -291,8 +353,11 @@ mod tests {
 
         assert_eq!(state.messages.len(), 1);
 
-        assert_eq!(state.messages[0].sender, Sender::User);
-        assert_eq!(state.messages[0].content, "This is a test");
+        assert_eq!(state.messages[0].message.role, "user");
+        assert_eq!(
+            state.messages[0].message.text_content().first(),
+            Some(&&"This is a test".to_string())
+        );
 
         assert!(result_action.is_err());
     }
@@ -312,8 +377,7 @@ mod tests {
         let mut state = State {
             input_value: "Hello".to_string(),
             messages: vec![ChatMessage {
-                sender: Sender::User,
-                content: "Hello".to_string(),
+                message: Message::user("Hello".to_string()),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
             selected_model: Some("gpt-4o-mini".to_string()),
@@ -324,6 +388,7 @@ mod tests {
             }],
             available_tools: vec![],
             awaiting_response: true,
+            pending_tool_calls: HashSet::new(),
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -340,8 +405,11 @@ mod tests {
         let _ = state.update(response);
 
         assert_eq!(state.messages.len(), 2);
-        assert_eq!(state.messages[1].sender, Sender::Bot);
-        assert_eq!(state.messages[1].content, "Hi there!");
+        assert_eq!(state.messages[1].message.role, "assistant");
+        assert_eq!(
+            state.messages[1].message.text_content().first(),
+            Some(&&"Hi there!".to_string())
+        );
         assert!(state.input_value.is_empty());
         assert!(!state.awaiting_response);
     }
@@ -351,8 +419,7 @@ mod tests {
         let mut state = State {
             input_value: "Hello".to_string(),
             messages: vec![ChatMessage {
-                sender: Sender::User,
-                content: "Hello".to_string(),
+                message: Message::user("Hello".to_string()),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
             selected_model: Some("gpt-4o-mini".to_string()),
@@ -363,6 +430,7 @@ mod tests {
             }],
             available_tools: vec![],
             awaiting_response: true,
+            pending_tool_calls: HashSet::new(),
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -375,8 +443,11 @@ mod tests {
         let _ = state.update(response);
 
         assert_eq!(state.messages.len(), 2);
-        assert_eq!(state.messages[1].sender, Sender::Bot);
-        assert_eq!(state.messages[1].content, "Error: No response from model.");
+        assert_eq!(state.messages[1].message.role, "assistant");
+        assert_eq!(
+            state.messages[1].message.text_content().first(),
+            Some(&&"Error: No response from model.".to_string())
+        );
         assert!(state.input_value.is_empty());
         assert!(!state.awaiting_response);
     }

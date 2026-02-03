@@ -71,7 +71,10 @@ pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {
     let navigation = build_navigation_bar(&state.current_page);
 
     let page_content = match &state.current_page {
-        PageId::Chat => state.chat.view(&state.settings.config.theme).map(NavigationAction::Chat),
+        PageId::Chat => state
+            .chat
+            .view(&state.settings.config.theme)
+            .map(NavigationAction::Chat),
         PageId::Settings => state.settings.view().map(NavigationAction::Settings),
     };
 

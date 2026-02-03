@@ -1,4 +1,5 @@
 use std::sync::{Arc, RwLock};
+mod openai_compatible;
 
 pub use crate::models::{Clients, CompletionRequest, CompletionResponse, ModelInfo};
 
