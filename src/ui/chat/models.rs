@@ -21,7 +21,13 @@ impl From<Message> for ChatMessage {
                 .content
                 .clone()
                 .iter()
-                .flat_map(|c| markdown::parse(c.as_text().unwrap_or_default()))
+                .flat_map(|c| {
+                    match c.as_text() {
+                        Some(text) => markdown::parse(&text).collect::<Vec<_>>(),
+                        None => markdown::parse("").collect::<Vec<_>>(),
+                    }
+                    .into_iter()
+                })
                 .collect(),
             message,
         }

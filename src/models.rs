@@ -286,9 +286,32 @@ impl Content {
     }
 
     /// Get the text content if this is a Text variant
-    pub fn as_text(&self) -> Option<&str> {
+    /// This is useful for rendering messages in markdown
+    /// It is meant only for rendering purposes
+    pub fn as_text(&self) -> Option<String> {
         match self {
-            Content::Text { text } => Some(text.as_str()),
+            Content::Text { text } => Some(text.clone()),
+            Content::ToolUse { id, name, input } => Some(format!(
+                "Tool Use - ID: {}, Name: {}, Input: {}",
+                id, name, input
+            )),
+            Content::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
+                if let Some(true) = is_error {
+                    Some(format!(
+                        "Tool Result (Error) - Tool Use ID: {}, Content: {}",
+                        tool_use_id, content
+                    ))
+                } else {
+                    Some(format!(
+                        "Tool Result - Tool Use ID: {}, Content: {}",
+                        tool_use_id, content
+                    ))
+                }
+            }
             _ => None,
         }
     }
