@@ -129,9 +129,11 @@ pub async fn call_tool(tool_call: ToolCall) -> Result<ToolCallResult, (String, S
                 "Function name mapping not found for tool call".to_string(),
             )
         })?;
-    let request_params = rmcp::model::CallToolRequestParam {
+    let request_params = rmcp::model::CallToolRequestParams {
         name: client_function_name.clone().into(),
         arguments: Some(args_json.clone()),
+        meta: None,
+        task: None,
     };
     log::info!(
         "Calling tool: {} with args: {:?}",
