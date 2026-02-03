@@ -21,7 +21,7 @@ impl AnthropicClient {
         }
         let client = reqwest::Client::new();
         let url = format!("{}/messages", self.config.endpoint.trim_end_matches('/'));
-        let data = self.serialize_request(request)?;
+        let data = self.serialize_request(request.into())?;
         println!("AnthropicClient: Sending request to URL: {}", url);
         println!("AnthropicClient: Request data: {}", data);
         let response = client
@@ -104,7 +104,10 @@ impl AnthropicClient {
         }
     }
 
-    fn serialize_request(&self, request: CompletionRequest) -> anyhow::Result<serde_json::Value> {
+    fn serialize_request(
+        &self,
+        request: AnthropicCompletionRequest,
+    ) -> anyhow::Result<serde_json::Value> {
         let request_json = serde_json::json!(request);
         match request_json {
             serde_json::Value::Object(mut map) => {
@@ -156,7 +159,6 @@ impl Default for AnthropicClient {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct AnthropicCompletionRequest {
     pub model: String,
@@ -223,6 +225,7 @@ impl From<AnthropicCompletionResponse> for CompletionResponse {
             content,
             tool_calls: None,
             reasoning_content: None,
+            tool_call_id: None,
         };
 
         CompletionResponse {
@@ -245,7 +248,6 @@ pub struct Usage {
     pub output_tokens: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnthropicMessage {
     pub role: String,

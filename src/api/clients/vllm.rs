@@ -1,6 +1,7 @@
 //! vLLM API Client
 
 use crate::{
+    api::clients::openai_compatible::OpenAICompatible,
     config::{Config, VllmConfig},
     models::{CompletionRequest, CompletionResponse},
 };
@@ -12,37 +13,17 @@ pub struct VllmClient {
     config: VllmConfig,
 }
 
-impl VllmClient {
+impl OpenAICompatible for VllmClient {
     async fn request(&self, request: CompletionRequest) -> anyhow::Result<CompletionResponse> {
-        let client = reqwest::Client::new();
-        let url = format!(
-            "{}/chat/completions",
-            self.config.endpoint.trim_end_matches('/')
-        );
-        log::info!("vLLMClient Request: {:?}", request);
-        let response = client
-            .post(url)
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            log::error!("OpenAIClient: Request failed with error: {}", error_text);
-            return Err(anyhow::anyhow!("Error: {}", error_text));
-        }
-        let text_data = response.text().await?;
-        log::info!("vLLMClient: Response data: {}", text_data);
-        let completion_response: CompletionResponse = self.deserialize_response(&text_data)?;
-        Ok(completion_response)
+        self.request_completion(request).await
     }
 
-    fn deserialize_response(&self, response_text: &str) -> anyhow::Result<CompletionResponse> {
-        let completion_response: CompletionResponse = serde_json::from_str(response_text)
-            .map_err(anyhow::Error::from)
-            .unwrap();
-        Ok(completion_response)
+    fn endpoint(&self) -> &str {
+        &self.config.endpoint
+    }
+
+    fn api_key(&self) -> Option<&str> {
+        None
     }
 }
 

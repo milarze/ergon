@@ -40,6 +40,7 @@ pub enum SettingsAction {
     ChangeVllmUrl(String),
     ChangeVllmModel(String),
     AddMcpConfig,
+    ChangeMcpConfigName(usize, String),
     ChangeMcpConfigType(usize, bool), // index, true for Stdio, false for StreamableHttp
     ChangeMcpStdioCommand(usize, String),
     ChangeMcpStdioArgs(usize, String), // comma-separated args string
@@ -77,6 +78,11 @@ impl State {
             }
             SettingsAction::AddMcpConfig => {
                 self.config.mcp_configs.push(McpConfig::default());
+            }
+            SettingsAction::ChangeMcpConfigName(index, name) => {
+                if let Some(config) = self.config.mcp_configs.get_mut(index) {
+                    config.set_name(name);
+                }
             }
             SettingsAction::ChangeMcpConfigType(index, is_stdio) => {
                 if let Some(config) = self.config.mcp_configs.get_mut(index) {
@@ -239,10 +245,12 @@ impl State {
 
             column = column.push(
                 row![
-                    text(format!("Config {}:", index + 1)),
+                    text_input("Name", mcp_config.name())
+                        .on_input(move |name| { SettingsAction::ChangeMcpConfigName(index, name) }),
                     type_picker,
                     config_fields,
-                    button("Remove").on_press(SettingsAction::RemoveMcpConfig(index))
+                    button(iced_fonts::lucide::trash())
+                        .on_press(SettingsAction::RemoveMcpConfig(index))
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
@@ -250,7 +258,7 @@ impl State {
         }
 
         column
-            .push(button("Add MCP Config").on_press(SettingsAction::AddMcpConfig))
+            .push(button(iced_fonts::lucide::plus()).on_press(SettingsAction::AddMcpConfig))
             .spacing(10)
             .align_x(Alignment::Center)
     }
@@ -361,6 +369,7 @@ mod tests {
             "https://api.anthropic.com/v1/".to_string(),
         ));
         state.update(SettingsAction::SaveSettings);
+        state.update(SettingsAction::AddMcpConfig);
 
         // Assuming update_settings persists the changes, we can check the config
         assert_eq!(state.config.theme, Theme::Dark);
@@ -375,5 +384,6 @@ mod tests {
         assert_eq!(state.config.anthropic.max_tokens, 1024);
         assert_eq!(state.config.vllm.endpoint, "http://localhost:8000/v1/");
         assert_eq!(state.config.vllm.model, "google/gemma-3-270m");
+        assert_eq!(state.config.mcp_configs.len(), 1);
     }
 }
