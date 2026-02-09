@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 home = "0.5.12"
 iced = { version = "0.14.0", features = ["markdown", "tokio"] }
 iced_aw = { version = "0.13.0", features = ["number_input"] }
