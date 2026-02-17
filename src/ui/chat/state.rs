@@ -1,8 +1,12 @@
 use std::collections::HashSet;
 
 use iced::{
-    widget::{button, column, container, markdown, pick_list, row, scrollable, text, text_input},
-    Alignment, Element, Length, Task, Theme,
+    widget::{
+        button, column, container, markdown, pick_list, row, scrollable, text, text_input, Row,
+    },
+    Alignment, Element,
+    Length::{self, Fill, Shrink},
+    Task, Theme,
 };
 
 use crate::{
@@ -221,21 +225,42 @@ impl State {
         message: &'a ChatMessage,
         theme: &'a Theme,
     ) -> Element<'a, ChatAction> {
+        let align = match role {
+            "user" => Alignment::End,
+            _ => Alignment::Start,
+        };
         let color = match role {
             "user" => theme.palette().primary,
-            "assistant" => theme.palette().success,
-            _ => theme.palette().text,
+            "assistant" => theme.palette().text,
+            _ => theme.palette().background,
         };
-        row![
-            text(role).width(Length::Shrink).color(color),
+        let role_widget: container::Container<'_, ChatAction, _, _> =
+            container(text(role).color(color))
+                .width(Shrink)
+                .align_x(align);
+        let content_widget: container::Container<'_, ChatAction, _, _> = container(
             markdown(
                 &message.markdown_items,
-                markdown::Settings::with_style(markdown::Style::from_palette(theme.palette()))
+                markdown::Settings::with_style(markdown::Style::from_palette(theme.palette())),
             )
-            .map(|url| ChatAction::UrlClicked(url.to_string()))
-        ]
-        .spacing(10)
-        .into()
+            .map(|url| ChatAction::UrlClicked(url.to_string())),
+        )
+        .width(Fill)
+        .align_x(align);
+        let mut elements = vec![];
+        match role {
+            "user" => {
+                elements.push(content_widget.into());
+                elements.push(role_widget.into());
+            }
+            "assistant" => {
+                elements.push(role_widget.into());
+                elements.push(content_widget.into());
+            }
+            _ => {}
+        }
+
+        Row::from_vec(elements).spacing(20).width(Fill).into()
     }
 
     fn build_input_area(&self) -> Element<'_, ChatAction> {
