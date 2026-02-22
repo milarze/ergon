@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use strum_macros::EnumIter;
 
 // Custom deserializer for Message.content field
