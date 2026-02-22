@@ -253,7 +253,7 @@ impl State {
                 elements.push(content_widget.into());
                 elements.push(role_widget.into());
             }
-            "assistant" => {
+            "assistant" | "tool" => {
                 elements.push(role_widget.into());
                 elements.push(content_widget.into());
             }

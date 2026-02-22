@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use strum_macros::EnumIter;
 
 // Custom deserializer for Message.content field
@@ -300,15 +301,20 @@ impl Content {
                 content,
                 is_error,
             } => {
+                log::info!("Tool Result Content: {}", content);
                 if let Some(true) = is_error {
                     Some(format!(
-                        "Tool Result (Error) - Tool Use ID: {}, Content: {}",
+                        "Tool Result (Error) - Tool Use ID: {}, Content: \n```json\n{}\n```",
                         tool_use_id, content
                     ))
                 } else {
                     Some(format!(
-                        "Tool Result - Tool Use ID: {}, Content: {}",
-                        tool_use_id, content
+                        "Tool Result - Tool Use ID: {}, Content: \n```json\n{}\n```",
+                        tool_use_id,
+                        serde_json::from_str::<serde_json::Value>(content)
+                            .map_or(content.clone(), |v| {
+                                serde_json::to_string_pretty(&v).unwrap_or(content.clone())
+                            })
                     ))
                 }
             }

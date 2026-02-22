@@ -16,19 +16,21 @@ impl From<ChatMessage> for Message {
 
 impl From<Message> for ChatMessage {
     fn from(message: Message) -> Self {
+        let markdown_items = message
+            .content
+            .clone()
+            .iter()
+            .flat_map(|c| {
+                match c.as_text() {
+                    Some(text) => markdown::parse(&text).collect::<Vec<_>>(),
+                    None => markdown::parse("").collect::<Vec<_>>(),
+                }
+                .into_iter()
+            })
+            .collect();
+        log::info!("Parsed markdown items: {:?}", markdown_items);
         Self {
-            markdown_items: message
-                .content
-                .clone()
-                .iter()
-                .flat_map(|c| {
-                    match c.as_text() {
-                        Some(text) => markdown::parse(&text).collect::<Vec<_>>(),
-                        None => markdown::parse("").collect::<Vec<_>>(),
-                    }
-                    .into_iter()
-                })
-                .collect(),
+            markdown_items: markdown_items,
             message,
         }
     }
