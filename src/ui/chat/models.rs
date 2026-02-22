@@ -30,7 +30,7 @@ impl From<Message> for ChatMessage {
             .collect();
         log::info!("Parsed markdown items: {:?}", markdown_items);
         Self {
-            markdown_items: markdown_items,
+            markdown_items,
             message,
         }
     }
