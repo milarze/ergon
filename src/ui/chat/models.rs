@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use iced::widget::markdown;
 
 use crate::models::{CompletionResponse, Message, ModelInfo, Tool, ToolCall, ToolCallResult};
@@ -47,4 +49,6 @@ pub enum ChatAction {
     UrlClicked(String),
     CallTool(ToolCall),
     ToolResponseReceived(Result<ToolCallResult, (String, String)>),
+    OpenFileDialog,
+    FileSelected(Option<PathBuf>),
 }
