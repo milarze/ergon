@@ -20,6 +20,7 @@ strum = "0.27.2"
 strum_macros = "0.27.2"
 tokio = { version = "1.49.0", features = ["process"] }
 iced_fonts = { version = "0.3.0", features = ["lucide", "nerd"] }
+rfd = "0.17.2"
 
 
 [profile.release]

@@ -26,6 +26,7 @@ pub struct State {
     available_models: Vec<ModelInfo>,
     available_tools: Vec<Tool>,
     pending_tool_calls: HashSet<String>,
+    selected_file: Option<std::path::PathBuf>,
 }
 
 impl State {
@@ -52,6 +53,8 @@ impl State {
             ChatAction::ToolsLoaaded(tools) => self.on_tools_loaded(tools),
             ChatAction::CallTool(tool_call) => self.on_tool_called(tool_call),
             ChatAction::ToolResponseReceived(response) => self.on_tool_response_received(response),
+            ChatAction::OpenFileDialog => self.on_open_file_dialog(),
+            ChatAction::FileSelected(path_buffer) => self.on_file_selected(path_buffer),
         }
     }
 
@@ -193,6 +196,29 @@ impl State {
         Task::none()
     }
 
+    fn on_open_file_dialog(&mut self) -> Task<ChatAction> {
+        Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .add_filter("All files", &["*"])
+                    .pick_file()
+                    .await
+                    .map(|file| file.path().to_path_buf())
+            },
+            ChatAction::FileSelected,
+        )
+    }
+
+    fn on_file_selected(&mut self, path_buffer: Option<std::path::PathBuf>) -> Task<ChatAction> {
+        if let Some(path) = path_buffer {
+            log::info!("File selected: {:?}", path);
+            self.selected_file = Some(path);
+        } else {
+            log::info!("File selection cancelled");
+        }
+        Task::none()
+    }
+
     pub fn view<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
         let chat_window = column![self.build_message_list(theme), self.build_input_area(),]
             .spacing(10)
@@ -273,13 +299,16 @@ impl State {
                 })
                 .on_submit(ChatAction::SendMessage)
                 .width(Length::FillPortion(8)),
+            button("📁")
+                .on_press(ChatAction::OpenFileDialog)
+                .width(Length::FillPortion(1)),
             button("Send")
                 .on_press_maybe(if self.awaiting_response {
                     None
                 } else {
                     Some(ChatAction::SendMessage)
                 })
-                .width(Length::FillPortion(1)),
+                .width(Length::FillPortion(2)),
             pick_list(
                 self.available_models
                     .iter()
@@ -333,6 +362,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: false,
             pending_tool_calls: HashSet::new(),
+            selected_file: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -369,6 +399,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: false,
             pending_tool_calls: HashSet::new(),
+            selected_file: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -414,6 +445,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: true,
             pending_tool_calls: HashSet::new(),
+            selected_file: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -456,6 +488,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: true,
             pending_tool_calls: HashSet::new(),
+            selected_file: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -486,5 +519,16 @@ mod tests {
         let _ = state.update(action);
 
         assert_eq!(state.selected_model, Some(model_name));
+    }
+
+    #[test]
+    fn test_file_selection() {
+        let mut state = State::default();
+        let file_path = std::path::PathBuf::from("/path/to/file.txt");
+
+        let action = ChatAction::FileSelected(Some(file_path.clone()));
+        let _ = state.update(action);
+
+        assert_eq!(state.selected_file, Some(file_path));
     }
 }
