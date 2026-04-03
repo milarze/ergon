@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use base64::Engine as _;
+
 use iced::{
     widget::{
         button, column, container, markdown, pick_list, row, scrollable, text, text_input, Row,
@@ -11,7 +13,9 @@ use iced::{
 
 use crate::{
     api::clients::get_model_manager,
-    models::{Clients, CompletionResponse, Message, ModelInfo, Tool, ToolCall, ToolCallResult},
+    models::{
+        Clients, CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
+    },
     ui::chat::{
         call_tool, complete_message, load_models, load_tools, models::ChatMessage, ChatAction,
     },
@@ -26,7 +30,7 @@ pub struct State {
     available_models: Vec<ModelInfo>,
     available_tools: Vec<Tool>,
     pending_tool_calls: HashSet<String>,
-    selected_file: Option<std::path::PathBuf>,
+    files: Option<Vec<FileData>>,
 }
 
 impl State {
@@ -93,7 +97,7 @@ impl State {
 
     fn build_pending_message(&self) -> ChatMessage {
         ChatMessage {
-            message: Message::user(self.input_value.clone()),
+            message: Message::user(self.input_value.clone(), self.files.clone()),
             markdown_items: markdown::parse(&self.input_value).collect(),
         }
     }
@@ -201,18 +205,65 @@ impl State {
             async {
                 rfd::AsyncFileDialog::new()
                     .add_filter("All files", &["*"])
-                    .pick_file()
+                    .pick_files()
                     .await
-                    .map(|file| file.path().to_path_buf())
+                    .map(|files| {
+                        files
+                            .into_iter()
+                            .map(|file| file.path().to_path_buf())
+                            .collect::<Vec<_>>()
+                    })
             },
             ChatAction::FileSelected,
         )
     }
 
-    fn on_file_selected(&mut self, path_buffer: Option<std::path::PathBuf>) -> Task<ChatAction> {
-        if let Some(path) = path_buffer {
-            log::info!("File selected: {:?}", path);
-            self.selected_file = Some(path);
+    fn on_file_selected(
+        &mut self,
+        path_buffer: Option<Vec<std::path::PathBuf>>,
+    ) -> Task<ChatAction> {
+        if let Some(paths) = path_buffer {
+            const BASE64_ENGINE: base64::engine::general_purpose::GeneralPurpose =
+                base64::engine::GeneralPurpose::new(
+                    &base64::alphabet::STANDARD,
+                    base64::engine::general_purpose::PAD,
+                );
+            if self.files.is_none() {
+                self.files = Some(vec![]);
+            }
+            let file_infos: Vec<FileData> = paths
+                .iter()
+                .filter_map(|path| {
+                    log::info!("Selected file: {}", path.display());
+                    let mime_type = mime_guess::from_path(path)
+                        .first_or_octet_stream()
+                        .essence_str()
+                        .to_string();
+                    let file_data = match std::fs::read(path) {
+                        Ok(data) => {
+                            let base64_content = BASE64_ENGINE.encode(&data);
+                            Some(format!("data:{};base64,{}", mime_type, base64_content))
+                        }
+                        Err(err) => {
+                            log::error!("Failed to read file {}: {}", path.display(), err);
+                            None
+                        }
+                    };
+                    file_data.map(|data| FileData {
+                        filename: Some(
+                            path.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string(),
+                        ),
+                        file_data: Some(data),
+                        file_id: None,
+                    })
+                })
+                .collect();
+            if let Some(files) = &mut self.files {
+                files.extend(file_infos);
+            }
         } else {
             log::info!("File selection cancelled");
         }
@@ -362,7 +413,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: false,
             pending_tool_calls: HashSet::new(),
-            selected_file: None,
+            files: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -399,7 +450,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: false,
             pending_tool_calls: HashSet::new(),
-            selected_file: None,
+            files: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -433,7 +484,7 @@ mod tests {
         let mut state = State {
             input_value: "Hello".to_string(),
             messages: vec![ChatMessage {
-                message: Message::user("Hello".to_string()),
+                message: Message::user("Hello".to_string(), None),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
             selected_model: Some("gpt-4o-mini".to_string()),
@@ -445,7 +496,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: true,
             pending_tool_calls: HashSet::new(),
-            selected_file: None,
+            files: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -476,7 +527,7 @@ mod tests {
         let mut state = State {
             input_value: "Hello".to_string(),
             messages: vec![ChatMessage {
-                message: Message::user("Hello".to_string()),
+                message: Message::user("Hello".to_string(), None),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
             selected_model: Some("gpt-4o-mini".to_string()),
@@ -488,7 +539,7 @@ mod tests {
             available_tools: vec![],
             awaiting_response: true,
             pending_tool_calls: HashSet::new(),
-            selected_file: None,
+            files: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -526,9 +577,10 @@ mod tests {
         let mut state = State::default();
         let file_path = std::path::PathBuf::from("/path/to/file.txt");
 
-        let action = ChatAction::FileSelected(Some(file_path.clone()));
+        let action = ChatAction::FileSelected(Some(vec![file_path.clone()]));
         let _ = state.update(action);
 
-        assert_eq!(state.selected_file, Some(file_path));
+        // Not reading actual files. The file reader defaults to None if it can't read the file.
+        assert_eq!(state.files, Some(vec![]));
     }
 }

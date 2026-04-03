@@ -50,5 +50,5 @@ pub enum ChatAction {
     CallTool(ToolCall),
     ToolResponseReceived(Result<ToolCallResult, (String, String)>),
     OpenFileDialog,
-    FileSelected(Option<PathBuf>),
+    FileSelected(Option<Vec<PathBuf>>),
 }

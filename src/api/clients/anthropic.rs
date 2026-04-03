@@ -274,6 +274,8 @@ impl From<Message> for AnthropicMessage {
                     is_error,
                 },
                 crate::models::Content::ImageUrl { .. } => todo!("Handle ImageUrl content"),
+                crate::models::Content::File { .. } => todo!("Handle File content"),
+                crate::models::Content::Audio { .. } => todo!("Handle Audio content"),
             })
             .collect();
         AnthropicMessage {
