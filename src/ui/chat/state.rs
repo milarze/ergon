@@ -10,6 +10,7 @@ use iced::{
     Length::{self, Fill, Shrink},
     Task, Theme,
 };
+use iced_aw::Spinner;
 
 use crate::{
     api::clients::get_model_manager,
@@ -349,17 +350,11 @@ impl State {
                     Some(ChatAction::InputChanged)
                 })
                 .on_submit(ChatAction::SendMessage)
-                .width(Length::FillPortion(8)),
+                .width(Length::FillPortion(12)),
             button("📁")
                 .on_press(ChatAction::OpenFileDialog)
                 .width(Length::FillPortion(1)),
-            button("Send")
-                .on_press_maybe(if self.awaiting_response {
-                    None
-                } else {
-                    Some(ChatAction::SendMessage)
-                })
-                .width(Length::FillPortion(2)),
+            self.build_send_button(),
             pick_list(
                 self.available_models
                     .iter()
@@ -368,11 +363,28 @@ impl State {
                 self.selected_model.as_ref(),
                 ChatAction::ModelSelected
             )
-            .width(Length::FillPortion(3)),
+            .width(Length::FillPortion(6)),
         ]
         .spacing(10)
         .align_y(Alignment::Center)
         .into()
+    }
+
+    fn build_send_button(&self) -> Element<'_, ChatAction> {
+        let button_content = if self.awaiting_response {
+            container(Spinner::new())
+        } else {
+            container(text("Send"))
+        };
+
+        button(button_content.width(Length::Fill).center_x(Length::Fill))
+            .on_press_maybe(if self.awaiting_response {
+                None
+            } else {
+                Some(ChatAction::SendMessage)
+            })
+            .width(Length::FillPortion(2))
+            .into()
     }
 }
 
