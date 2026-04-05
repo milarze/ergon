@@ -8,11 +8,16 @@ An LLM chat interface built in Rust.
 
 ## Features
 
-- Models (TODO)
+- Models
   - Supports multiple LLMs
-- MCP (TODO)
-  - StreamableHTTP
+- MCP
+  - StreamableHTTP (TODO)
   - STDIO
+- Multimodal
+  - Text
+  - Images
+  - Audio
+  - Files
 
 ## Installation
 
