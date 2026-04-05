@@ -10,14 +10,14 @@ An LLM chat interface built in Rust.
 
 - Models
   - Supports multiple LLMs
-- MCP
-  - StreamableHTTP (TODO)
-  - STDIO
-- Multimodal
+- Multi-modal
   - Text
   - Images
   - Audio
   - Files
+- MCP
+  - StreamableHTTP (TODO)
+  - STDIO
 - Embedded models (TODO)
 - Conversation management (TODO)
 - ACP (TODO)
