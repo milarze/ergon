@@ -18,6 +18,9 @@ An LLM chat interface built in Rust.
   - Images
   - Audio
   - Files
+- Embedded models (TODO)
+- Conversation management (TODO)
+- ACP (TODO)
 
 ## Installation
 
