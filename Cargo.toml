@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1.0.102"
 home = "0.5.12"
 iced = { version = "0.14.0", features = ["markdown", "tokio"] }
-iced_aw = { version = "0.13.1", features = ["number_input", "spinner"] }
+iced_aw = { version = "0.14.1", features = ["number_input", "spinner"] }
 log = "0.4.29"
 rand = "0.10.1"
 reqwest = { version = "0.13.3", features = ["json"] }
