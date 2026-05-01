@@ -600,19 +600,21 @@ mod tests {
 
     #[test]
     fn test_model_selection() {
-        let mut state = State::default();
-        state.available_models = vec![
-            ModelInfo {
-                name: "gpt-4o-mini".to_string(),
-                id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
-            },
-            ModelInfo {
-                name: "gpt-3.5-turbo".to_string(),
-                id: "gpt-3.5-turbo".to_string(),
-                client: Clients::OpenAI,
-            },
-        ];
+        let mut state = State {
+            available_models: vec![
+                ModelInfo {
+                    name: "gpt-4o-mini".to_string(),
+                    id: "gpt-4o-mini".to_string(),
+                    client: Clients::OpenAI,
+                },
+                ModelInfo {
+                    name: "gpt-3.5-turbo".to_string(),
+                    id: "gpt-3.5-turbo".to_string(),
+                    client: Clients::OpenAI,
+                },
+            ],
+            ..State::default()
+        };
         let model_name = "gpt-4o-mini".to_string();
 
         let action = ChatAction::ModelSelected(model_name.clone());
