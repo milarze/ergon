@@ -42,7 +42,7 @@ where
     }
 }
 
-#[derive(Debug, EnumIter, Clone, Default)]
+#[derive(Debug, EnumIter, Clone, Default, PartialEq)]
 pub enum Clients {
     #[default]
     OpenAI,
@@ -50,7 +50,7 @@ pub enum Clients {
     Vllm,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ModelInfo {
     pub name: String,
     pub id: String,

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use iced::Theme;
@@ -60,10 +61,66 @@ pub struct McpStdioConfig {
     pub args: Vec<String>,
 }
 
+fn default_client_name() -> String {
+    "Ergon".to_string()
+}
+fn default_redirect_port() -> u16 {
+    8585
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum McpAuthConfig {
+    #[default]
+    None,
+    BearerToken {
+        token: String,
+    },
+    OAuth2 {
+        #[serde(default)]
+        scopes: Vec<String>,
+        #[serde(default = "default_client_name")]
+        client_name: String,
+        #[serde(default = "default_redirect_port")]
+        redirect_port: u16,
+    },
+}
+
+impl Display for McpAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpAuthConfig::None => write!(f, "None"),
+            McpAuthConfig::BearerToken { .. } => write!(f, "Bearer Token"),
+            McpAuthConfig::OAuth2 { .. } => write!(f, "OAuth2"),
+        }
+    }
+}
+
+/// Stored OAuth2 tokens for persistence between app restarts
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredOAuthTokens {
+    pub client_id: String,
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<u64>,
+    pub granted_scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpStreamableHttpConfig {
     pub name: String,
     pub endpoint: String,
+    #[serde(default)]
+    pub auth: McpAuthConfig,
+}
+
+impl Default for McpStreamableHttpConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            endpoint: String::new(),
+            auth: McpAuthConfig::None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +176,7 @@ pub struct Config {
     pub anthropic: AnthropicConfig,
     pub vllm: VllmConfig,
     pub mcp_configs: Vec<McpConfig>,
+    pub oauth_tokens: HashMap<String, StoredOAuthTokens>,
     pub settings_file: String,
 }
 
@@ -132,6 +190,7 @@ impl Config {
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
                 mcp_configs: vec![McpConfig::default()],
+                oauth_tokens: HashMap::new(),
                 settings_file: settings_file_path.clone(),
             };
             let settings_json = serde_json::to_string(&default_settings).unwrap();
@@ -150,6 +209,7 @@ impl Config {
                     anthropic: AnthropicConfig::default(),
                     vllm: VllmConfig::default(),
                     mcp_configs: vec![McpConfig::default()],
+                    oauth_tokens: HashMap::new(),
                     settings_file: settings_file_path.clone(),
                 }
             }
@@ -160,6 +220,7 @@ impl Config {
                 anthropic: AnthropicConfig::default(),
                 vllm: VllmConfig::default(),
                 mcp_configs: vec![McpConfig::default()],
+                oauth_tokens: HashMap::new(),
                 settings_file: settings_file_path.clone(),
             }
         }
@@ -202,12 +263,15 @@ impl Serialize for Config {
             Theme::Dark => "Dark",
             _ => "Default",
         };
-        let mut state = serializer.serialize_struct("Config", 1)?;
+        let mut state = serializer.serialize_struct("Config", 6)?;
         state.serialize_field("theme", theme_name)?;
         state.serialize_field("openai", &self.openai)?;
         state.serialize_field("anthropic", &self.anthropic)?;
         state.serialize_field("vllm", &self.vllm)?;
         state.serialize_field("mcp", &self.mcp_configs)?;
+        if !self.oauth_tokens.is_empty() {
+            state.serialize_field("oauth_tokens", &self.oauth_tokens)?;
+        }
         state.end()
     }
 }
@@ -223,6 +287,7 @@ impl<'de> Deserialize<'de> for Config {
             Anthropic,
             Vllm,
             McpConfigs,
+            OAuthTokens,
         }
 
         impl<'de> Deserialize<'de> for Fields {
@@ -249,7 +314,18 @@ impl<'de> Deserialize<'de> for Config {
                             "anthropic" => Ok(Fields::Anthropic),
                             "vllm" => Ok(Fields::Vllm),
                             "mcp" => Ok(Fields::McpConfigs),
-                            _ => Err(E::unknown_field(value, &["theme", "openai"])),
+                            "oauth_tokens" => Ok(Fields::OAuthTokens),
+                            _ => Err(E::unknown_field(
+                                value,
+                                &[
+                                    "theme",
+                                    "openai",
+                                    "anthropic",
+                                    "vllm",
+                                    "mcp",
+                                    "oauth_tokens",
+                                ],
+                            )),
                         }
                     }
                 }
@@ -275,6 +351,7 @@ impl<'de> Deserialize<'de> for Config {
                 let mut anthropic = None;
                 let mut vllm = None;
                 let mut mcp_configs = None;
+                let mut oauth_tokens = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -325,6 +402,11 @@ impl<'de> Deserialize<'de> for Config {
                             }
                             mcp_configs = Some(configs);
                         }
+                        Fields::OAuthTokens => {
+                            let tokens_map =
+                                map.next_value::<HashMap<String, StoredOAuthTokens>>()?;
+                            oauth_tokens = Some(tokens_map);
+                        }
                     }
                 }
 
@@ -333,12 +415,14 @@ impl<'de> Deserialize<'de> for Config {
                 let anthropic = anthropic.unwrap_or_default();
                 let vllm = vllm.unwrap_or_default();
                 let mcp_configs = mcp_configs.unwrap_or_default();
+                let oauth_tokens = oauth_tokens.unwrap_or_default();
                 Ok(Config {
                     theme,
                     openai,
                     anthropic,
                     vllm,
                     mcp_configs,
+                    oauth_tokens,
                     settings_file: Config::settings_file_path(),
                 })
             }
@@ -366,6 +450,7 @@ mod tests {
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![McpConfig::default()],
+            oauth_tokens: HashMap::new(),
             settings_file: "./test.json".to_string(),
         };
         let serialized = serde_json::to_string(&config).unwrap();
@@ -485,6 +570,123 @@ mod tests {
             }
             _ => panic!("Expected StreamableHttp config"),
         }
+    }
+
+    #[test]
+    fn test_deserialize_streamable_http_without_auth_defaults_to_none() {
+        // Existing configs without an `auth` field should deserialize with McpAuthConfig::None
+        let json =
+            r#"{"StreamableHttp":{"name":"test-http","endpoint":"http://localhost:9000/v1/"}}"#;
+        let config: McpConfig = serde_json::from_str(json).unwrap();
+        if let McpConfig::StreamableHttp(http_config) = &config {
+            assert_eq!(http_config.name, "test-http");
+            assert_eq!(http_config.endpoint, "http://localhost:9000/v1/");
+            assert_eq!(http_config.auth, McpAuthConfig::None);
+        } else {
+            panic!("Expected StreamableHttp config");
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_streamable_http_auth_none() {
+        let config = McpConfig::StreamableHttp(McpStreamableHttpConfig {
+            name: "test".to_string(),
+            endpoint: "http://localhost:8080".to_string(),
+            auth: McpAuthConfig::None,
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_roundtrip_streamable_http_auth_bearer() {
+        let config = McpConfig::StreamableHttp(McpStreamableHttpConfig {
+            name: "test".to_string(),
+            endpoint: "http://localhost:8080".to_string(),
+            auth: McpAuthConfig::BearerToken {
+                token: "sk-my-secret-token".to_string(),
+            },
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+        // Verify the token is in the JSON
+        assert!(json.contains("sk-my-secret-token"));
+    }
+
+    #[test]
+    fn test_roundtrip_streamable_http_auth_oauth2() {
+        let config = McpConfig::StreamableHttp(McpStreamableHttpConfig {
+            name: "test".to_string(),
+            endpoint: "http://localhost:8080".to_string(),
+            auth: McpAuthConfig::OAuth2 {
+                scopes: vec!["read".to_string(), "write".to_string()],
+                client_name: "MyApp".to_string(),
+                redirect_port: 9090,
+            },
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_roundtrip_streamable_http_auth_oauth2_defaults() {
+        // OAuth2 with default values should roundtrip correctly
+        let config = McpConfig::StreamableHttp(McpStreamableHttpConfig {
+            name: "test".to_string(),
+            endpoint: "http://localhost:8080".to_string(),
+            auth: McpAuthConfig::OAuth2 {
+                scopes: Vec::new(),
+                client_name: "Ergon".to_string(),
+                redirect_port: 8585,
+            },
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_roundtrip_config_with_oauth_tokens() {
+        let mut oauth_tokens = HashMap::new();
+        oauth_tokens.insert(
+            "test-server".to_string(),
+            StoredOAuthTokens {
+                client_id: "client-123".to_string(),
+                access_token: "access-xyz".to_string(),
+                refresh_token: Some("refresh-abc".to_string()),
+                expires_at: Some(1700000000),
+                granted_scopes: vec!["read".to_string()],
+            },
+        );
+        let config = Config {
+            theme: Theme::Dark,
+            openai: OpenAIConfig::default(),
+            anthropic: AnthropicConfig::default(),
+            vllm: VllmConfig::default(),
+            mcp_configs: vec![],
+            oauth_tokens,
+            settings_file: "./test.json".to_string(),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.oauth_tokens, deserialized.oauth_tokens);
+        let stored = deserialized.oauth_tokens.get("test-server").unwrap();
+        assert_eq!(stored.client_id, "client-123");
+        assert_eq!(stored.access_token, "access-xyz");
+        assert_eq!(stored.refresh_token, Some("refresh-abc".to_string()));
+        assert_eq!(stored.expires_at, Some(1700000000));
+        assert_eq!(stored.granted_scopes, vec!["read".to_string()]);
+    }
+
+    #[test]
+    fn test_deserialize_config_without_oauth_tokens() {
+        // Configs without oauth_tokens field should have empty HashMap
+        let json = r#"{"theme":"Dark"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.oauth_tokens.is_empty());
     }
 
     #[test]

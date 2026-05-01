@@ -1,17 +1,26 @@
+pub mod auth;
+pub mod oauth_callback;
+
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
 
-use crate::config::McpConfig;
+use crate::config::{McpAuthConfig, McpConfig};
 use anyhow::Result;
 use iced::futures::future::join_all;
 use rmcp::{
     service::{RunningService, ServiceExt},
-    transport::{ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess},
+    transport::{
+        auth::{AuthClient, AuthorizationManager},
+        streamable_http_client::StreamableHttpClientTransportConfig,
+        ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess,
+    },
     RoleClient,
 };
 use tokio::process::Command;
+
+use self::auth::FileCredentialStore;
 
 pub type McpClient = RunningService<RoleClient, ()>;
 
@@ -41,26 +50,45 @@ impl ToolManager {
         )
         .await
         .into_iter()
-        .map(|(name, result)| result.map(|client| (name, Arc::new(client))))
-        .collect::<Result<HashMap<String, Arc<McpClient>>, _>>()?;
+        .filter_map(|(name, result)| match result {
+            Ok(client) => Some((name, Arc::new(client))),
+            Err(e) => {
+                log::error!(
+                    "Failed to initialize MCP client '{}': {}. Skipping this server.",
+                    name,
+                    e
+                );
+                None
+            }
+        })
+        .collect::<HashMap<String, Arc<McpClient>>>();
 
         let mut all_tools: Vec<crate::models::Tool> = Vec::new();
         for (client_name, client) in clients.iter() {
-            let response: Vec<crate::models::Tool> = client
-                .list_all_tools()
-                .await?
-                .into_iter()
-                .map(|tool| {
-                    let mut tool = tool.into();
-                    match &mut tool {
-                        crate::models::Tool::Function(func) => {
-                            func.name = format!("__{}__{}", client_name, func.name);
-                        }
-                    };
-                    tool
-                })
-                .collect();
-            all_tools.extend(response);
+            match client.list_all_tools().await {
+                Ok(tools) => {
+                    let response: Vec<crate::models::Tool> = tools
+                        .into_iter()
+                        .map(|tool| {
+                            let mut tool = tool.into();
+                            match &mut tool {
+                                crate::models::Tool::Function(func) => {
+                                    func.name = format!("__{}__{}", client_name, func.name);
+                                }
+                            };
+                            tool
+                        })
+                        .collect();
+                    all_tools.extend(response);
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to list tools for MCP client '{}': {}. Skipping.",
+                        client_name,
+                        e
+                    );
+                }
+            }
         }
 
         {
@@ -150,11 +178,87 @@ pub async fn init(config: McpConfig) -> Result<McpClient> {
             ().serve(transport).await?
         }
         McpConfig::StreamableHttp(server_config) => {
-            let transport = StreamableHttpClientTransport::from_uri(server_config.endpoint);
-            ().serve(transport).await?
+            init_streamable_http(
+                &server_config.name,
+                &server_config.endpoint,
+                &server_config.auth,
+            )
+            .await?
         }
     };
     Ok(client)
+}
+
+/// Initialize a StreamableHTTP MCP client with the appropriate auth configuration.
+async fn init_streamable_http(
+    server_name: &str,
+    endpoint: &str,
+    auth_config: &McpAuthConfig,
+) -> Result<McpClient> {
+    match auth_config {
+        McpAuthConfig::None => {
+            log::info!(
+                "MCP '{}': connecting to {} with no authentication",
+                server_name,
+                endpoint
+            );
+            let transport = StreamableHttpClientTransport::from_uri(endpoint);
+            let client = ().serve(transport).await?;
+            Ok(client)
+        }
+
+        McpAuthConfig::BearerToken { token } => {
+            log::info!(
+                "MCP '{}': connecting to {} with bearer token authentication",
+                server_name,
+                endpoint
+            );
+            let config =
+                StreamableHttpClientTransportConfig::with_uri(endpoint).auth_header(token.clone());
+            let transport = StreamableHttpClientTransport::from_config(config);
+            let client = ().serve(transport).await?;
+            Ok(client)
+        }
+
+        McpAuthConfig::OAuth2 { .. } => {
+            log::info!(
+                "MCP '{}': connecting to {} with OAuth2 authentication",
+                server_name,
+                endpoint
+            );
+
+            let mut auth_manager = AuthorizationManager::new(endpoint)
+                .await
+                .map_err(|e| anyhow::anyhow!("OAuth2 manager creation failed: {}", e))?;
+
+            // Set file-backed credential store for persistence
+            auth_manager.set_credential_store(FileCredentialStore::new(server_name));
+
+            // Startup path: only use stored credentials. Interactive authorization
+            // is triggered explicitly from the Settings UI via `auth::run_oauth_authorization`.
+            let has_stored = auth_manager
+                .initialize_from_store()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to load stored credentials: {}", e))?;
+
+            if !has_stored {
+                return Err(anyhow::anyhow!(
+                    "MCP '{}' requires OAuth2 authorization. Open Settings and click 'Authenticate' to sign in.",
+                    server_name
+                ));
+            }
+
+            log::info!("MCP '{}': using stored OAuth2 credentials", server_name);
+
+            // Create AuthClient that wraps reqwest::Client with automatic token injection
+            let auth_client = AuthClient::new(reqwest::Client::default(), auth_manager);
+
+            let config = StreamableHttpClientTransportConfig::with_uri(endpoint);
+            let transport = StreamableHttpClientTransport::with_client(auth_client, config);
+            let client = ().serve(transport).await?;
+            Ok(client)
+        }
+    }
 }
 
 static TOOL_MANAGER: std::sync::OnceLock<ToolManager> = std::sync::OnceLock::new();
