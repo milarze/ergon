@@ -6,8 +6,6 @@ use iced::{
 mod chat;
 mod settings;
 
-use crate::{config::McpConfig, mcp::McpClient};
-
 pub fn init() -> (Ergon, Task<NavigationAction>) {
     Ergon::new()
 }
@@ -17,19 +15,16 @@ pub struct Ergon {
     current_page: PageId,
     chat: chat::State,
     pub settings: settings::State,
-    #[allow(dead_code)]
-    mcp_clients: Vec<McpClient>,
 }
 
 impl Ergon {
     pub fn new() -> (Self, Task<NavigationAction>) {
         let (chat_state, chat_task) = chat::State::new();
-        let settings = settings::State::default();
+        let settings = settings::State::new();
         let state = Self {
             current_page: PageId::default(),
             chat: chat_state,
-            settings: settings.clone(),
-            mcp_clients: initialize_mcp_clients(settings.config.mcp_configs),
+            settings,
         };
         let task = chat_task.map(NavigationAction::Chat);
         (state, task)
@@ -61,8 +56,37 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
             task.map(NavigationAction::Chat)
         }
         NavigationAction::Settings(settings_action) => {
-            state.settings.update(settings_action);
-            Task::none()
+            // Intercept SaveCompleted before forwarding: dispatch reload tasks
+            // for models/tools when the corresponding configs changed.
+            let reload_task = if let settings::SettingsAction::SaveCompleted {
+                llm_changed,
+                mcp_changed,
+            } = &settings_action
+            {
+                let mut tasks: Vec<Task<NavigationAction>> = Vec::new();
+                if *llm_changed {
+                    tasks.push(
+                        Task::perform(chat::load_models(), chat::ChatAction::ModelsLoaded)
+                            .map(NavigationAction::Chat),
+                    );
+                }
+                if *mcp_changed {
+                    tasks.push(
+                        Task::perform(chat::load_tools(), chat::ChatAction::ToolsLoaaded)
+                            .map(NavigationAction::Chat),
+                    );
+                }
+                Task::batch(tasks)
+            } else {
+                Task::none()
+            };
+
+            let settings_task = state
+                .settings
+                .update(settings_action)
+                .map(NavigationAction::Settings);
+
+            Task::batch([settings_task, reload_task])
         }
     }
 }
@@ -99,24 +123,4 @@ fn build_navigation_bar(current_page: &PageId) -> Element<'static, NavigationAct
     ]
     .spacing(10)
     .into()
-}
-
-fn initialize_mcp_clients(mcp_configs: Vec<McpConfig>) -> Vec<McpClient> {
-    mcp_configs
-        .iter()
-        .map(|config| tokio::spawn(crate::mcp::init(config.clone())))
-        .filter_map(
-            |handle| match tokio::runtime::Handle::current().block_on(handle) {
-                Ok(Ok(client)) => Some(client),
-                Ok(Err(e)) => {
-                    eprintln!("Failed to initialize MCP client: {}", e);
-                    None
-                }
-                Err(e) => {
-                    eprintln!("Task join error: {}", e);
-                    None
-                }
-            },
-        )
-        .collect()
 }

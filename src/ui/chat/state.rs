@@ -27,7 +27,7 @@ pub struct State {
     messages: Vec<ChatMessage>,
     input_value: String,
     awaiting_response: bool,
-    selected_model: Option<String>,
+    selected_model: Option<ModelInfo>,
     available_models: Vec<ModelInfo>,
     available_tools: Vec<Tool>,
     pending_tool_calls: HashSet<String>,
@@ -75,10 +75,14 @@ impl State {
             self.messages.push(user_message);
         }
 
-        let default_model = "gpt-4o-mini".to_string();
-        let model_name = self.selected_model.as_ref().unwrap_or(&default_model);
+        if self.selected_model.is_none() {
+            log::error!("No model selected, cannot send message");
+            self.awaiting_response = false;
+            return Task::none();
+        }
+
         let model = get_model_manager()
-            .find_model(model_name)
+            .find_model(&self.selected_model.as_ref().unwrap().name)
             .unwrap_or(None)
             .unwrap_or(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
@@ -150,14 +154,19 @@ impl State {
     }
 
     fn on_model_selected(&mut self, model_name: String) -> Task<ChatAction> {
-        self.selected_model = Some(model_name);
+        self.selected_model = self
+            .available_models
+            .iter()
+            .find(|m| m.name == model_name)
+            .cloned();
         Task::none()
     }
 
     fn on_models_loaded(&mut self, models: Vec<ModelInfo>) -> Task<ChatAction> {
         self.available_models = models;
-        if self.selected_model.is_none() && !self.available_models.is_empty() {
-            self.selected_model = Some(self.available_models[0].name.clone());
+        if (self.selected_model.is_none() && !self.available_models.is_empty()) ||
+        !self.available_models.contains(self.selected_model.as_ref().unwrap()) {
+            self.selected_model = Some(self.available_models[0].clone());
         }
         self.awaiting_response = false;
         Task::none()
@@ -360,7 +369,7 @@ impl State {
                     .iter()
                     .map(|m| m.name.clone())
                     .collect::<Vec<_>>(),
-                self.selected_model.as_ref(),
+                self.selected_model.as_ref().map(|m| m.name.clone()),
                 ChatAction::ModelSelected
             )
             .width(Length::FillPortion(6)),
