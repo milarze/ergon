@@ -425,7 +425,11 @@ mod tests {
         let mut state = State {
             input_value: "This is a test".to_string(),
             messages: vec![],
-            selected_model: Some("gpt-4o-mini".to_string()),
+            selected_model: Some(ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
@@ -462,7 +466,11 @@ mod tests {
         let mut state = State {
             input_value: "This is a test".to_string(),
             messages: vec![],
-            selected_model: Some("gpt-4o-mini".to_string()),
+            selected_model: Some(ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
@@ -508,7 +516,11 @@ mod tests {
                 message: Message::user("Hello".to_string(), None),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
-            selected_model: Some("gpt-4o-mini".to_string()),
+            selected_model: Some(ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
@@ -551,7 +563,11 @@ mod tests {
                 message: Message::user("Hello".to_string(), None),
                 markdown_items: markdown::parse("Hello").collect(),
             }],
-            selected_model: Some("gpt-4o-mini".to_string()),
+            selected_model: Some(ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
@@ -585,12 +601,28 @@ mod tests {
     #[test]
     fn test_model_selection() {
         let mut state = State::default();
+        state.available_models = vec![
+            ModelInfo {
+                name: "gpt-4o-mini".to_string(),
+                id: "gpt-4o-mini".to_string(),
+                client: Clients::OpenAI,
+            },
+            ModelInfo {
+                name: "gpt-3.5-turbo".to_string(),
+                id: "gpt-3.5-turbo".to_string(),
+                client: Clients::OpenAI,
+            },
+        ];
         let model_name = "gpt-4o-mini".to_string();
 
         let action = ChatAction::ModelSelected(model_name.clone());
         let _ = state.update(action);
 
-        assert_eq!(state.selected_model, Some(model_name));
+        assert_eq!(state.selected_model, Some(ModelInfo {
+            name: model_name.clone(),
+            id: model_name,
+            client: Clients::OpenAI,
+        }));
     }
 
     #[test]
