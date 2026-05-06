@@ -16,7 +16,7 @@ An LLM chat interface built in Rust.
   - Audio
   - Files
 - MCP
-  - StreamableHTTP (TODO)
+  - StreamableHTTP
   - STDIO
 - Embedded models (TODO)
 - Conversation management (TODO)
@@ -40,6 +40,20 @@ An LLM chat interface built in Rust.
 
 cargo install ergon
 ```
+
+## MCP
+
+Ergon can host MCP servers over `stdio` or `StreamableHTTP`. Configure them in
+**Settings → MCP Servers**:
+
+- **Name** — used to identify the server in the chat-target picker.
+- **Type** — stdio or Streamable HTTP.
+- **Command + args** — how to spawn the server process (stdio servers only).
+- **Endpoint** — the server's base URL (Streamable HTTP servers only).
+- **Auth** — None, Bearer token, or OAuth2 (Streamable HTTP servers only).
+- **Scopes** — OAuth2 scopes (Streamable HTTP servers with OAuth2 auth only).
+- **Redirect Port** — port for receiving OAuth2 callbacks (Streamable HTTP
+  servers with OAuth2 auth only).
 
 ## ACP agents
 
