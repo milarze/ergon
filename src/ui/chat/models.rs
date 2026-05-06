@@ -88,18 +88,13 @@ impl From<Message> for ChatMessage {
 }
 
 /// Where prompts from the chat input are routed.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum ChatTarget {
     /// Standard LLM provider via the existing `Clients` enum.
+    #[default]
     Llm,
     /// External ACP agent identified by its configured name.
     Agent(String),
-}
-
-impl Default for ChatTarget {
-    fn default() -> Self {
-        Self::Llm
-    }
 }
 
 impl std::fmt::Display for ChatTarget {
