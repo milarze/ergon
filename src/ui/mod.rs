@@ -1,6 +1,6 @@
 use iced::{
     widget::{button, column, row},
-    Element, Task,
+    Element, Subscription, Task,
 };
 
 mod chat;
@@ -57,7 +57,8 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
         }
         NavigationAction::Settings(settings_action) => {
             // Intercept SaveCompleted before forwarding: dispatch reload tasks
-            // for models/tools when the corresponding configs changed.
+            // for models/tools when the corresponding configs changed, and
+            // refresh the chat-mode agent picker from the freshly-saved config.
             let reload_task = if let settings::SettingsAction::SaveCompleted {
                 llm_changed,
                 mcp_changed,
@@ -76,6 +77,9 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
                             .map(NavigationAction::Chat),
                     );
                 }
+                // ACP agent list may have changed even when llm/mcp didn't.
+                // Cheap to refresh unconditionally on save.
+                state.chat.refresh_available_agents();
                 Task::batch(tasks)
             } else {
                 Task::none()
@@ -89,6 +93,10 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
             Task::batch([settings_task, reload_task])
         }
     }
+}
+
+pub fn subscription(state: &Ergon) -> Subscription<NavigationAction> {
+    state.chat.subscription().map(NavigationAction::Chat)
 }
 
 pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {

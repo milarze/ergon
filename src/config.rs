@@ -129,6 +129,69 @@ pub enum McpConfig {
     StreamableHttp(McpStreamableHttpConfig),
 }
 
+/// Configuration for an external ACP agent (Stdio transport).
+///
+/// ACP agents are separate processes that own their own LLM credentials and
+/// provider logic. Ergon spawns them and speaks ACP over stdio.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AcpAgentStdioConfig {
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Literal env vars to inject when spawning the agent.
+    #[serde(default)]
+    pub env: Vec<(String, String)>,
+    /// Optional sandbox root for filesystem operations the agent requests.
+    /// `None` means the directory in which Ergon was launched.
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AcpAgentConfig {
+    Stdio(AcpAgentStdioConfig),
+}
+
+impl Default for AcpAgentConfig {
+    fn default() -> Self {
+        AcpAgentConfig::Stdio(AcpAgentStdioConfig {
+            name: "default-acp-agent".to_string(),
+            command: String::new(),
+            args: vec![],
+            env: vec![],
+            workspace_root: None,
+        })
+    }
+}
+
+impl Display for AcpAgentConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AcpAgentConfig::Stdio(_) => write!(f, "Stdio: {}", self.name()),
+        }
+    }
+}
+
+impl AcpAgentConfig {
+    pub fn name(&self) -> &str {
+        match self {
+            AcpAgentConfig::Stdio(cfg) => &cfg.name,
+        }
+    }
+
+    pub fn validate_name(&self) -> bool {
+        let name = self.name();
+        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    }
+
+    pub fn set_name(&mut self, new_name: String) {
+        match self {
+            AcpAgentConfig::Stdio(cfg) => cfg.name = new_name,
+        }
+    }
+}
+
 impl Default for McpConfig {
     fn default() -> Self {
         McpConfig::Stdio(McpStdioConfig {
@@ -169,6 +232,20 @@ impl McpConfig {
     }
 }
 
+/// Persisted resumable-session state for an ACP agent.
+///
+/// Stored per agent name, written when a session id is first allocated and
+/// cleared on explicit "forget" / failed resume. Keyed by the user-supplied
+/// agent name in [`AcpAgentConfig`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredAcpSession {
+    /// The most recent session id we held for this agent.
+    pub session_id: String,
+    /// The workspace root that session was created against. Used to gate
+    /// resume so we don't load a session into a different cwd.
+    pub workspace_root: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
@@ -176,6 +253,8 @@ pub struct Config {
     pub anthropic: AnthropicConfig,
     pub vllm: VllmConfig,
     pub mcp_configs: Vec<McpConfig>,
+    pub acp_agents: Vec<AcpAgentConfig>,
+    pub acp_session_state: HashMap<String, StoredAcpSession>,
     pub oauth_tokens: HashMap<String, StoredOAuthTokens>,
     pub settings_file: String,
 }
@@ -184,15 +263,7 @@ impl Config {
     fn load_settings(path: Option<String>) -> Self {
         let settings_file_path = path.unwrap_or_else(Self::settings_file_path);
         if std::fs::exists(&settings_file_path).is_err() {
-            let default_settings = Self {
-                theme: Theme::Dark,
-                openai: OpenAIConfig::default(),
-                anthropic: AnthropicConfig::default(),
-                vllm: VllmConfig::default(),
-                mcp_configs: vec![McpConfig::default()],
-                oauth_tokens: HashMap::new(),
-                settings_file: settings_file_path.clone(),
-            };
+            let default_settings = Self::fresh(settings_file_path.clone());
             let settings_json = serde_json::to_string(&default_settings).unwrap();
             std::fs::write(&settings_file_path, settings_json)
                 .expect("Failed to write default settings");
@@ -203,26 +274,24 @@ impl Config {
             if let Ok(settings) = serde_json::from_str::<Self>(&settings_json) {
                 settings
             } else {
-                Self {
-                    theme: Theme::Dark,
-                    openai: OpenAIConfig::default(),
-                    anthropic: AnthropicConfig::default(),
-                    vllm: VllmConfig::default(),
-                    mcp_configs: vec![McpConfig::default()],
-                    oauth_tokens: HashMap::new(),
-                    settings_file: settings_file_path.clone(),
-                }
+                Self::fresh(settings_file_path)
             }
         } else {
-            Self {
-                theme: Theme::Dark,
-                openai: OpenAIConfig::default(),
-                anthropic: AnthropicConfig::default(),
-                vllm: VllmConfig::default(),
-                mcp_configs: vec![McpConfig::default()],
-                oauth_tokens: HashMap::new(),
-                settings_file: settings_file_path.clone(),
-            }
+            Self::fresh(settings_file_path)
+        }
+    }
+
+    fn fresh(settings_file: String) -> Self {
+        Self {
+            theme: Theme::Dark,
+            openai: OpenAIConfig::default(),
+            anthropic: AnthropicConfig::default(),
+            vllm: VllmConfig::default(),
+            mcp_configs: vec![McpConfig::default()],
+            acp_agents: vec![],
+            acp_session_state: HashMap::new(),
+            oauth_tokens: HashMap::new(),
+            settings_file,
         }
     }
 
@@ -263,12 +332,18 @@ impl Serialize for Config {
             Theme::Dark => "Dark",
             _ => "Default",
         };
-        let mut state = serializer.serialize_struct("Config", 6)?;
+        let mut state = serializer.serialize_struct("Config", 7)?;
         state.serialize_field("theme", theme_name)?;
         state.serialize_field("openai", &self.openai)?;
         state.serialize_field("anthropic", &self.anthropic)?;
         state.serialize_field("vllm", &self.vllm)?;
         state.serialize_field("mcp", &self.mcp_configs)?;
+        if !self.acp_agents.is_empty() {
+            state.serialize_field("acp", &self.acp_agents)?;
+        }
+        if !self.acp_session_state.is_empty() {
+            state.serialize_field("acp_session_state", &self.acp_session_state)?;
+        }
         if !self.oauth_tokens.is_empty() {
             state.serialize_field("oauth_tokens", &self.oauth_tokens)?;
         }
@@ -287,7 +362,10 @@ impl<'de> Deserialize<'de> for Config {
             Anthropic,
             Vllm,
             McpConfigs,
+            AcpAgents,
+            AcpSessionState,
             OAuthTokens,
+            Other,
         }
 
         impl<'de> Deserialize<'de> for Fields {
@@ -308,25 +386,17 @@ impl<'de> Deserialize<'de> for Config {
                     where
                         E: serde::de::Error,
                     {
-                        match value {
-                            "theme" => Ok(Fields::Theme),
-                            "openai" => Ok(Fields::OpenAI),
-                            "anthropic" => Ok(Fields::Anthropic),
-                            "vllm" => Ok(Fields::Vllm),
-                            "mcp" => Ok(Fields::McpConfigs),
-                            "oauth_tokens" => Ok(Fields::OAuthTokens),
-                            _ => Err(E::unknown_field(
-                                value,
-                                &[
-                                    "theme",
-                                    "openai",
-                                    "anthropic",
-                                    "vllm",
-                                    "mcp",
-                                    "oauth_tokens",
-                                ],
-                            )),
-                        }
+                        Ok(match value {
+                            "theme" => Fields::Theme,
+                            "openai" => Fields::OpenAI,
+                            "anthropic" => Fields::Anthropic,
+                            "vllm" => Fields::Vllm,
+                            "mcp" => Fields::McpConfigs,
+                            "acp" => Fields::AcpAgents,
+                            "acp_session_state" => Fields::AcpSessionState,
+                            "oauth_tokens" => Fields::OAuthTokens,
+                            _ => Fields::Other,
+                        })
                     }
                 }
 
@@ -351,6 +421,8 @@ impl<'de> Deserialize<'de> for Config {
                 let mut anthropic = None;
                 let mut vllm = None;
                 let mut mcp_configs = None;
+                let mut acp_agents = None;
+                let mut acp_session_state = None;
                 let mut oauth_tokens = None;
 
                 while let Some(key) = map.next_key()? {
@@ -402,10 +474,29 @@ impl<'de> Deserialize<'de> for Config {
                             }
                             mcp_configs = Some(configs);
                         }
+                        Fields::AcpAgents => {
+                            let acp_vec = map.next_value::<Vec<serde_json::Value>>()?;
+                            let mut agents = Vec::new();
+                            for v in acp_vec {
+                                let agent = AcpAgentConfig::deserialize(v)
+                                    .map_err(serde::de::Error::custom)?;
+                                agents.push(agent);
+                            }
+                            acp_agents = Some(agents);
+                        }
+                        Fields::AcpSessionState => {
+                            let m = map
+                                .next_value::<HashMap<String, StoredAcpSession>>()?;
+                            acp_session_state = Some(m);
+                        }
                         Fields::OAuthTokens => {
                             let tokens_map =
                                 map.next_value::<HashMap<String, StoredOAuthTokens>>()?;
                             oauth_tokens = Some(tokens_map);
+                        }
+                        Fields::Other => {
+                            // Ignore unknown fields for forward compatibility.
+                            let _: serde::de::IgnoredAny = map.next_value()?;
                         }
                     }
                 }
@@ -415,6 +506,8 @@ impl<'de> Deserialize<'de> for Config {
                 let anthropic = anthropic.unwrap_or_default();
                 let vllm = vllm.unwrap_or_default();
                 let mcp_configs = mcp_configs.unwrap_or_default();
+                let acp_agents = acp_agents.unwrap_or_default();
+                let acp_session_state = acp_session_state.unwrap_or_default();
                 let oauth_tokens = oauth_tokens.unwrap_or_default();
                 Ok(Config {
                     theme,
@@ -422,6 +515,8 @@ impl<'de> Deserialize<'de> for Config {
                     anthropic,
                     vllm,
                     mcp_configs,
+                    acp_agents,
+                    acp_session_state,
                     oauth_tokens,
                     settings_file: Config::settings_file_path(),
                 })
@@ -450,6 +545,8 @@ mod tests {
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![McpConfig::default()],
+            acp_agents: vec![],
+            acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
             settings_file: "./test.json".to_string(),
         };
@@ -667,6 +764,8 @@ mod tests {
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![],
+            acp_agents: vec![],
+            acp_session_state: HashMap::new(),
             oauth_tokens,
             settings_file: "./test.json".to_string(),
         };
@@ -687,6 +786,37 @@ mod tests {
         let json = r#"{"theme":"Dark"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert!(config.oauth_tokens.is_empty());
+        assert!(config.acp_session_state.is_empty());
+    }
+
+    #[test]
+    fn test_roundtrip_config_with_acp_session_state() {
+        let mut acp_session_state = HashMap::new();
+        acp_session_state.insert(
+            "my-agent".to_string(),
+            StoredAcpSession {
+                session_id: "sess-abcdef".to_string(),
+                workspace_root: "/home/me/project".to_string(),
+            },
+        );
+        let config = Config {
+            theme: Theme::Dark,
+            openai: OpenAIConfig::default(),
+            anthropic: AnthropicConfig::default(),
+            vllm: VllmConfig::default(),
+            mcp_configs: vec![],
+            acp_agents: vec![],
+            acp_session_state,
+            oauth_tokens: HashMap::new(),
+            settings_file: "./test.json".to_string(),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("acp_session_state"));
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.acp_session_state, deserialized.acp_session_state);
+        let stored = deserialized.acp_session_state.get("my-agent").unwrap();
+        assert_eq!(stored.session_id, "sess-abcdef");
+        assert_eq!(stored.workspace_root, "/home/me/project");
     }
 
     #[test]

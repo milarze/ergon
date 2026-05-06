@@ -2,6 +2,7 @@ use rmcp::model::JsonObject;
 use serde_json::Value;
 
 use crate::{
+    acp::{get_agent_manager, AuthMethodInfo, PromptOutcome},
     api::clients::get_model_manager,
     models::{
         Clients, CompletionRequest, CompletionResponse, Content, ModelInfo, Tool, ToolCall,
@@ -151,4 +152,146 @@ pub async fn call_tool(tool_call: ToolCall) -> Result<ToolCallResult, (String, S
         id: call_id.clone(),
         contents: vec![Content::tool_result(call_id, json_string)],
     })
+}
+
+// ── ACP agent helpers ─────────────────────────────────────────────────────
+
+/// Result of attempting to start an agent and create a session.
+#[derive(Debug, Clone)]
+pub enum AgentStartOutcome {
+    Ready,
+    AuthRequired(Vec<AuthMethodInfo>),
+}
+
+/// Ensure an ACP agent process is running and a session is created. If the
+/// agent reports `auth_required`, returns the advertised auth methods so the
+/// UI can surface a sign-in picker.
+pub async fn start_agent(agent_name: String) -> Result<AgentStartOutcome, String> {
+    use crate::acp::manager::EnsureSessionError;
+    match get_agent_manager().ensure_session(&agent_name).await {
+        Ok(_) => Ok(AgentStartOutcome::Ready),
+        Err(EnsureSessionError::AuthRequired { methods, .. }) => {
+            Ok(AgentStartOutcome::AuthRequired(methods))
+        }
+        Err(EnsureSessionError::Other(e)) => Err(e.to_string()),
+    }
+}
+
+/// Result of a prompt call. Either the agent ran the turn and gave us a
+/// stop reason, or it told us we need to authenticate first.
+#[derive(Debug, Clone)]
+pub enum AgentPromptOutcome {
+    Completed(PromptOutcome),
+    AuthRequired(Vec<AuthMethodInfo>),
+}
+
+/// Send a single-turn prompt to a running ACP agent. The agent's streamed
+/// updates surface separately via the subscription.
+pub async fn prompt_agent(
+    agent_name: String,
+    text: String,
+) -> Result<AgentPromptOutcome, String> {
+    use crate::acp::session::SessionError;
+    let manager = get_agent_manager();
+    let handle = manager
+        .get(&agent_name)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("agent '{agent_name}' is not running"))?;
+    match handle.prompt_text(text).await {
+        Ok(o) => Ok(AgentPromptOutcome::Completed(o)),
+        Err(SessionError::AuthRequired { methods }) => {
+            Ok(AgentPromptOutcome::AuthRequired(methods))
+        }
+        Err(SessionError::Other(e)) => Err(e.to_string()),
+    }
+}
+
+/// Run an `authenticate` request against the named agent.
+pub async fn authenticate_agent(agent_name: String, method_id: String) -> Result<(), String> {
+    let manager = get_agent_manager();
+    let handle = manager
+        .get(&agent_name)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("agent '{agent_name}' is not running"))?;
+    handle
+        .authenticate(method_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Persist the given session info to `~/.ergon/settings.json` under
+/// `acp_session_state`. Idempotent. Best-effort: errors are logged.
+pub async fn persist_agent_session(info: AgentSessionInfo) {
+    use crate::config::{Config, StoredAcpSession};
+    // Reload from disk so we don't clobber other concurrent edits.
+    let mut cfg = Config::default();
+    cfg.acp_session_state.insert(
+        info.agent_name.clone(),
+        StoredAcpSession {
+            session_id: info.session_id.clone(),
+            workspace_root: info.workspace_root.clone(),
+        },
+    );
+    cfg.update_settings();
+}
+#[derive(Debug, Clone)]
+pub struct AgentSessionInfo {
+    pub agent_name: String,
+    pub session_id: String,
+    pub workspace_root: String,
+}
+
+/// Fetch the current session id + workspace root for a running agent, if any.
+/// Returns `None` if the agent is not running or has no live session yet.
+pub async fn current_session_info(agent_name: String) -> Option<AgentSessionInfo> {
+    let manager = get_agent_manager();
+    let handle = manager.get(&agent_name).ok().flatten()?;
+    let id = handle.current_session_id().await?;
+    Some(AgentSessionInfo {
+        agent_name,
+        session_id: id.0.to_string(),
+        workspace_root: handle.workspace_root.to_string_lossy().into_owned(),
+    })
+}
+
+/// Outcome of attempting to resume a previously-stored session.
+#[derive(Debug, Clone)]
+pub enum AgentResumeOutcome {
+    /// Session resumed successfully.
+    Resumed,
+    /// Agent does not advertise `load_session` capability.
+    Unsupported,
+    /// Stored workspace root no longer matches the agent's current workspace
+    /// root, so we declined to resume.
+    WorkspaceMismatch,
+    /// Agent demanded authentication before we could load the session.
+    AuthRequired(Vec<AuthMethodInfo>),
+}
+
+/// Spawn the agent (if needed) and attempt to load a previously-stored
+/// session. Does NOT call `session/new`.
+pub async fn resume_agent(
+    agent_name: String,
+    stored_session_id: String,
+    stored_workspace_root: String,
+) -> Result<AgentResumeOutcome, String> {
+    use crate::acp::session::SessionError;
+    let manager = get_agent_manager();
+    let handle = manager
+        .ensure_started(&agent_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !handle.supports_load_session {
+        return Ok(AgentResumeOutcome::Unsupported);
+    }
+    let current_root = handle.workspace_root.to_string_lossy();
+    if current_root != stored_workspace_root {
+        return Ok(AgentResumeOutcome::WorkspaceMismatch);
+    }
+    let session_id = agent_client_protocol::schema::SessionId::new(stored_session_id);
+    match handle.load_session(session_id).await {
+        Ok(_) => Ok(AgentResumeOutcome::Resumed),
+        Err(SessionError::AuthRequired { methods }) => Ok(AgentResumeOutcome::AuthRequired(methods)),
+        Err(SessionError::Other(e)) => Err(e.to_string()),
+    }
 }
