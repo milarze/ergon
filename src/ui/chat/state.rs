@@ -652,6 +652,7 @@ impl State {
     }
 
     /// Name of the agent currently selected as the chat target, if any.
+    #[allow(dead_code)]
     pub fn active_agent_name(&self) -> Option<&str> {
         match &self.chat_target {
             ChatTarget::Agent(name) => Some(name),
@@ -1011,6 +1012,7 @@ impl State {
 /// agent manager every 100ms until the session exists, then subscribe to its
 /// broadcast and forward events. If the session disappears (e.g. user
 /// shutdown), the stream ends.
+#[allow(clippy::ptr_arg)]
 fn agent_event_subscription(agent_name: &String) -> impl iced::futures::Stream<Item = ChatAction> {
     let name = agent_name.clone();
     stream::unfold(

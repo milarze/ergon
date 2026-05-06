@@ -28,9 +28,9 @@ pub mod terminal;
 pub mod transport;
 pub mod types;
 
-pub use manager::{get_agent_manager, AgentManager};
-pub use session::{AgentEvent, AgentSessionHandle, PromptOutcome};
+pub use manager::{get_agent_manager};
+pub use session::{AgentEvent, PromptOutcome};
 pub use types::{
-    AgentUpdate, AuthMethodInfo, AvailableCommand, PlanEntry, PlanEntryPriority, PlanEntryStatus,
+    AgentUpdate, AuthMethodInfo, AvailableCommand, 
     StopReason,
 };
