@@ -26,6 +26,10 @@ iced_fonts = { version = "0.3.0", features = ["lucide", "nerd"] }
 rfd = "0.17.2"
 mime_guess = "2.0.5"
 base64 = "0.22.1"
+agent-client-protocol = "0.11.1"
+agent-client-protocol-tokio = "0.11.1"
+tokio-util = { version = "0.7.18", features = ["compat"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
 
 
 [profile.release]

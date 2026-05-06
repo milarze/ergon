@@ -4,7 +4,10 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Alignment, Element, Length, Task, Theme};
 use iced_aw::number_input;
 
-use crate::config::{Config, McpAuthConfig, McpConfig, McpStdioConfig, McpStreamableHttpConfig};
+use crate::config::{
+    AcpAgentConfig, Config, McpAuthConfig, McpConfig, McpStdioConfig,
+    McpStreamableHttpConfig,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpConfigType {
@@ -114,6 +117,15 @@ pub enum SettingsAction {
     OAuthAuthFinished(String, Result<(), String>),
     ClearOAuthTokens(usize),
     OAuthTokensCleared(String, Result<(), String>),
+
+    // ── ACP agents ─────────────────────────────────────────────────────
+    AddAcpAgent,
+    RemoveAcpAgent(usize),
+    ChangeAcpAgentName(usize, String),
+    ChangeAcpAgentCommand(usize, String),
+    ChangeAcpAgentArgs(usize, String),
+    ChangeAcpAgentWorkspaceRoot(usize, String),
+    ChangeAcpAgentEnv(usize, String),
 }
 
 impl State {
@@ -383,6 +395,64 @@ impl State {
                     }
                 }
             }
+            SettingsAction::AddAcpAgent => {
+                self.config.acp_agents.push(AcpAgentConfig::default());
+            }
+            SettingsAction::RemoveAcpAgent(index) => {
+                if index < self.config.acp_agents.len() {
+                    self.config.acp_agents.remove(index);
+                }
+            }
+            SettingsAction::ChangeAcpAgentName(index, name) => {
+                if let Some(agent) = self.config.acp_agents.get_mut(index) {
+                    agent.set_name(name);
+                }
+            }
+            SettingsAction::ChangeAcpAgentCommand(index, command) => {
+                if let Some(AcpAgentConfig::Stdio(cfg)) = self.config.acp_agents.get_mut(index) {
+                    cfg.command = command;
+                }
+            }
+            SettingsAction::ChangeAcpAgentArgs(index, args_str) => {
+                if let Some(AcpAgentConfig::Stdio(cfg)) = self.config.acp_agents.get_mut(index) {
+                    cfg.args = args_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            SettingsAction::ChangeAcpAgentWorkspaceRoot(index, root) => {
+                if let Some(AcpAgentConfig::Stdio(cfg)) = self.config.acp_agents.get_mut(index) {
+                    cfg.workspace_root = if root.trim().is_empty() {
+                        None
+                    } else {
+                        Some(root)
+                    };
+                }
+            }
+            SettingsAction::ChangeAcpAgentEnv(index, env_str) => {
+                if let Some(AcpAgentConfig::Stdio(cfg)) = self.config.acp_agents.get_mut(index) {
+                    // Format: "KEY=value, KEY2=value2"
+                    cfg.env = env_str
+                        .split(',')
+                        .filter_map(|kv| {
+                            let kv = kv.trim();
+                            if kv.is_empty() {
+                                return None;
+                            }
+                            let mut parts = kv.splitn(2, '=');
+                            let k = parts.next()?.trim().to_string();
+                            let v = parts.next().unwrap_or("").trim().to_string();
+                            if k.is_empty() {
+                                None
+                            } else {
+                                Some((k, v))
+                            }
+                        })
+                        .collect();
+                }
+            }
         }
         Task::none()
     }
@@ -394,6 +464,7 @@ impl State {
             self.anthropic_view(),
             self.vllm_view(),
             self.mcp_configs_view(),
+            self.acp_agents_view(),
             button("Save Settings").on_press(SettingsAction::SaveSettings)
         ]
         .spacing(20)
@@ -655,6 +726,64 @@ impl State {
 
         row_widgets.push(text(status_text))
     }
+
+    /// Render the ACP agents section. Each agent is a Stdio entry with name,
+    /// command, args (comma-separated), workspace root, and env vars
+    /// (`KEY=value, KEY2=value2` format).
+    fn acp_agents_view(&self) -> iced::widget::Column<'_, SettingsAction> {
+        let mut column = column![text("ACP Agents:").size(18)];
+
+        for (index, agent) in self.config.acp_agents.iter().enumerate() {
+            let AcpAgentConfig::Stdio(cfg) = agent;
+            let args_str = cfg.args.join(", ");
+            let env_str = cfg
+                .env
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let workspace_root = cfg.workspace_root.clone().unwrap_or_default();
+
+            let header = row![
+                text_input("Name", &cfg.name).on_input(move |name| {
+                    SettingsAction::ChangeAcpAgentName(index, name)
+                }),
+                button(iced_fonts::lucide::trash())
+                    .on_press(SettingsAction::RemoveAcpAgent(index))
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center);
+
+            let cmd_row = row![
+                text("Command:"),
+                text_input("Path or executable", &cfg.command)
+                    .on_input(move |c| SettingsAction::ChangeAcpAgentCommand(index, c)),
+                text("Args:"),
+                text_input("comma,separated,args", &args_str)
+                    .on_input(move |a| SettingsAction::ChangeAcpAgentArgs(index, a)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center);
+
+            let env_row = row![
+                text("Workspace root:"),
+                text_input("(optional) /path/to/project", &workspace_root)
+                    .on_input(move |r| SettingsAction::ChangeAcpAgentWorkspaceRoot(index, r)),
+                text("Env:"),
+                text_input("KEY=value, KEY2=value2", &env_str)
+                    .on_input(move |e| SettingsAction::ChangeAcpAgentEnv(index, e)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center);
+
+            column = column.push(column![header, cmd_row, env_row].spacing(5));
+        }
+
+        column
+            .push(button(iced_fonts::lucide::plus()).on_press(SettingsAction::AddAcpAgent))
+            .spacing(10)
+            .align_x(Alignment::Center)
+    }
 }
 
 #[cfg(test)]
@@ -751,6 +880,8 @@ mod tests {
                     model: "google/gemma-3-270m".to_string(),
                 },
                 mcp_configs: vec![],
+                acp_agents: vec![],
+                acp_session_state: HashMap::new(),
                 oauth_tokens: HashMap::new(),
                 settings_file: "./test.json".to_string(),
             },
@@ -914,6 +1045,8 @@ mod tests {
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![],
+            acp_agents: vec![],
+            acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
             settings_file: "./t.json".into(),
         };
@@ -939,6 +1072,8 @@ mod tests {
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![],
+            acp_agents: vec![],
+            acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
             settings_file: "./t.json".into(),
         };
