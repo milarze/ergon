@@ -1,0 +1,25 @@
+default_profile = "local-llama"
+
+[profiles.local-llama]
+base_url = "https://llama-cpp.sg.ezra.dev/v1"
+model = "unsloth/gemma-4-E4B-it-Q8_0"
+# api_key_env = "LLAMA_API_KEY"   # optional; omit Authorization if unset
+temperature = 0.2
+max_tokens = 2048
+system_prompt = "You are a helpful technical research assistant. You answer questions on platform engineering particularly with an architectural focus."
+# permission_mode controls who gates sensitive tool calls (write_file, run_shell):
+#   "client" (default) — the agent invokes fs/terminal calls directly and
+#                        trusts the client to prompt the user / enforce policy.
+#   "agent"            — the agent calls session/request_permission first and
+#                        only proceeds on an explicit allow.
+permission_mode = "client"
+# supports_vision controls whether ContentBlock::Image inputs are forwarded
+# to the model as OpenAI multimodal `image_url` data URIs. Leave false for
+# text-only models; image blocks are then summarised as `[image: <mime>]`.
+supports_vision = true
+
+[profiles.local-llama.extra_body]
+cache_prompt = true
+top_k = 40
+min_p = 0.05
+repeat_penalty = 1.05

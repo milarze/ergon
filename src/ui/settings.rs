@@ -126,6 +126,7 @@ pub enum SettingsAction {
     ChangeAcpAgentArgs(usize, String),
     ChangeAcpAgentWorkspaceRoot(usize, String),
     ChangeAcpAgentEnv(usize, String),
+    ChangeChatHistoryPath(String),
 }
 
 impl State {
@@ -453,6 +454,9 @@ impl State {
                         .collect();
                 }
             }
+            SettingsAction::ChangeChatHistoryPath(path) => {
+                self.config.chat_history_dir = path;
+            }
         }
         Task::none()
     }
@@ -460,6 +464,7 @@ impl State {
     pub fn view(&self) -> Element<'_, SettingsAction> {
         let col = column![
             self.theme_view(),
+            self.chat_history_view(),
             self.openai_view(),
             self.anthropic_view(),
             self.vllm_view(),
@@ -482,6 +487,16 @@ impl State {
         row![
             button("Light").on_press(SettingsAction::ChangeTheme(Theme::Light)),
             button("Dark").on_press(SettingsAction::ChangeTheme(Theme::Dark)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+    }
+
+    fn chat_history_view(&self) -> iced::widget::Row<'_, SettingsAction> {
+        row![
+            text("Chat history directory:"),
+            text_input("Enter path", &self.config.chat_history_dir)
+                .on_input(SettingsAction::ChangeChatHistoryPath),
         ]
         .spacing(10)
         .align_y(Alignment::Center)
@@ -883,6 +898,7 @@ mod tests {
                 acp_agents: vec![],
                 acp_session_state: HashMap::new(),
                 oauth_tokens: HashMap::new(),
+                chat_history_dir: "./chat_history".to_string(),
                 settings_file: "./test.json".to_string(),
             },
             saved_config: Config::default(),
@@ -1048,6 +1064,7 @@ mod tests {
             acp_agents: vec![],
             acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
+            chat_history_dir: "./chat_history".into(),
             settings_file: "./t.json".into(),
         };
         let mut b = a.clone();
@@ -1075,6 +1092,7 @@ mod tests {
             acp_agents: vec![],
             acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
+            chat_history_dir: "./chat_history".into(),
             settings_file: "./t.json".into(),
         };
         let mut b = a.clone();
