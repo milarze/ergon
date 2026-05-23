@@ -64,6 +64,7 @@ pub struct McpStdioConfig {
 fn default_client_name() -> String {
     "Ergon".to_string()
 }
+
 fn default_redirect_port() -> u16 {
     8585
 }
@@ -257,6 +258,7 @@ pub struct Config {
     pub acp_session_state: HashMap<String, StoredAcpSession>,
     pub oauth_tokens: HashMap<String, StoredOAuthTokens>,
     pub settings_file: String,
+    pub chat_history_dir: String,
 }
 
 impl Config {
@@ -292,6 +294,7 @@ impl Config {
             acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
             settings_file,
+            chat_history_dir: Self::chat_history_file_path(),
         }
     }
 
@@ -311,6 +314,19 @@ impl Config {
 
         settings_dir
             .join(SETTINGS_FILE)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn chat_history_file_path() -> String {
+        let settings_dir = home::home_dir()
+            .map(|path| path.join(".ergon/chat_history"))
+            .unwrap_or_else(|| ".ergon".into());
+
+        if !settings_dir.exists() {
+            std::fs::create_dir_all(&settings_dir).expect("Failed to create settings directory");
+        }
+        settings_dir
             .to_string_lossy()
             .into_owned()
     }
@@ -347,6 +363,7 @@ impl Serialize for Config {
         if !self.oauth_tokens.is_empty() {
             state.serialize_field("oauth_tokens", &self.oauth_tokens)?;
         }
+        state.serialize_field("chat_history_dir", &self.chat_history_dir)?;
         state.end()
     }
 }
@@ -365,6 +382,7 @@ impl<'de> Deserialize<'de> for Config {
             AcpAgents,
             AcpSessionState,
             OAuthTokens,
+            ChatHistoryDir,
             Other,
         }
 
@@ -395,6 +413,7 @@ impl<'de> Deserialize<'de> for Config {
                             "acp" => Fields::AcpAgents,
                             "acp_session_state" => Fields::AcpSessionState,
                             "oauth_tokens" => Fields::OAuthTokens,
+                            "chat_history_dir" => Fields::ChatHistoryDir,
                             _ => Fields::Other,
                         })
                     }
@@ -424,6 +443,7 @@ impl<'de> Deserialize<'de> for Config {
                 let mut acp_agents = None;
                 let mut acp_session_state = None;
                 let mut oauth_tokens = None;
+                let mut chat_history_dir = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -494,6 +514,9 @@ impl<'de> Deserialize<'de> for Config {
                                 map.next_value::<HashMap<String, StoredOAuthTokens>>()?;
                             oauth_tokens = Some(tokens_map);
                         }
+                        Fields::ChatHistoryDir => {
+                            chat_history_dir = map.next_value()?;
+                        }
                         Fields::Other => {
                             // Ignore unknown fields for forward compatibility.
                             let _: serde::de::IgnoredAny = map.next_value()?;
@@ -509,6 +532,7 @@ impl<'de> Deserialize<'de> for Config {
                 let acp_agents = acp_agents.unwrap_or_default();
                 let acp_session_state = acp_session_state.unwrap_or_default();
                 let oauth_tokens = oauth_tokens.unwrap_or_default();
+                let chat_history_dir = chat_history_dir.unwrap_or_else(|| Config::chat_history_file_path());
                 Ok(Config {
                     theme,
                     openai,
@@ -518,6 +542,7 @@ impl<'de> Deserialize<'de> for Config {
                     acp_agents,
                     acp_session_state,
                     oauth_tokens,
+                    chat_history_dir,
                     settings_file: Config::settings_file_path(),
                 })
             }
@@ -548,6 +573,7 @@ mod tests {
             acp_agents: vec![],
             acp_session_state: HashMap::new(),
             oauth_tokens: HashMap::new(),
+            chat_history_dir: "/fake_chat_history/".to_string(),
             settings_file: "./test.json".to_string(),
         };
         let serialized = serde_json::to_string(&config).unwrap();
@@ -563,6 +589,7 @@ mod tests {
         assert!(serialized.contains(
             "\"mcp\":[{\"Stdio\":{\"name\":\"default-stdio-mcp\",\"command\":\"\",\"args\":[]}}]"
         ));
+        assert!(serialized.contains("\"chat_history_dir\":\"/fake_chat_history/\""));
     }
 
     #[test]
@@ -767,6 +794,7 @@ mod tests {
             acp_agents: vec![],
             acp_session_state: HashMap::new(),
             oauth_tokens,
+            chat_history_dir: "/fake_chat_history/".to_string(),
             settings_file: "./test.json".to_string(),
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -808,6 +836,7 @@ mod tests {
             acp_agents: vec![],
             acp_session_state,
             oauth_tokens: HashMap::new(),
+            chat_history_dir: "/fake_chat_history/".to_string(),
             settings_file: "./test.json".to_string(),
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -832,5 +861,13 @@ mod tests {
         assert_eq!(config.vllm.endpoint, "https://vllm.cluster.local/v1/");
         assert_eq!(config.vllm.model, "google/gemma-3-270m");
         assert!(config.mcp_configs.is_empty());
+    }
+
+    #[test]
+    fn test_deserialize_with_chat_history_dir() {
+        let json = r#"{"theme":"Dark","chat_history_dir":"/custom/chat_history/"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.chat_history_dir, "/custom/chat_history/");
     }
 }

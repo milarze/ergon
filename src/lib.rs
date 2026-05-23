@@ -1,5 +1,6 @@
 mod api;
 mod acp;
+mod chat_history;
 mod config;
 mod mcp;
 mod models;
