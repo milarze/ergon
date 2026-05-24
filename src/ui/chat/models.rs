@@ -120,40 +120,24 @@ pub enum ChatAction {
     OpenFileDialog,
     FileSelected(Option<Vec<PathBuf>>),
 
-    // ── ACP agent path ────────────────────────────────────────────────
-    /// User picked a chat target (LLM or Agent(name)).
     TargetSelected(ChatTarget),
-    /// Agent session start finished. Carries `AuthRequired` if the agent
-    /// needs sign-in before a session can be created.
     AgentStarted(Result<AgentStartOutcome, String>),
-    /// A streamed event from the running agent session.
     AgentEvent(AgentEvent),
-    /// The current agent prompt turn finished. May be `AuthRequired` if the
-    /// agent rejected session creation just before the prompt would have run.
     AgentPromptComplete(Result<AgentPromptOutcome, String>),
-    /// User clicked a "Sign in with X" button.
     AuthenticateAgent {
         agent: String,
         method_id: String,
     },
-    /// `authenticate` request finished.
     AgentAuthenticated {
         agent: String,
         method_id: String,
         result: Result<(), String>,
     },
-    /// User clicked a slash-command chip; insert "/<name> " into the input.
     SlashCommandSelected(String),
-    /// User clicked the "Resume last session" button. Triggers `resume_agent`
-    /// for the named agent using the stored session id from `Config`.
     ResumeAgent { agent: String },
-    /// `resume_agent` finished.
     AgentResumed {
         agent: String,
         result: Result<crate::ui::chat::tasks::AgentResumeOutcome, String>,
     },
-    /// Result of fetching session info for persistence after a session was
-    /// (re)created. `None` means no live session, in which case the stored
-    /// entry (if any) is left untouched.
     PersistAgentSession(Option<crate::ui::chat::tasks::AgentSessionInfo>),
 }

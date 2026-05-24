@@ -1,5 +1,4 @@
 use crate::models::Message;
-use crate::config::Config;
 use anyhow::Result;
 use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
