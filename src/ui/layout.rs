@@ -1,8 +1,8 @@
 use iced::{
-    Element, Length, Subscription, Task, widget::{Rule, button, column, container, row, rule}
+    Element, Length, Subscription, Task, widget::{button, column, container, row, rule, text}
 };
 
-use crate::ui::chat;
+use crate::{chat_history::{ChatSummary, list_chat_summaries}, ui::chat};
 use crate::ui::settings;
 
 pub fn init() -> (Ergon, Task<NavigationAction>) {
@@ -14,6 +14,7 @@ pub struct Ergon {
     current_page: PageId,
     chat: chat::State,
     pub settings: settings::State,
+    chat_summaries: Vec<ChatSummary>,
 }
 
 impl Ergon {
@@ -24,6 +25,7 @@ impl Ergon {
             current_page: PageId::default(),
             chat: chat_state,
             settings,
+            chat_summaries: Vec::new(),
         };
         let task = chat_task.map(NavigationAction::Chat);
         (state, task)
@@ -35,13 +37,27 @@ pub enum NavigationAction {
     Navigate(PageId),
     Chat(chat::ChatAction),
     Settings(settings::SettingsAction),
+    LoadChatHistory,
+    ChatHistoryLoaded(Vec<ChatSummary>),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
-pub enum PageId {
+pub enum ChatId {
     #[default]
-    Chat,
+    New,
+    Existing(String),
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum PageId {
+    Chat(ChatId),
     Settings,
+}
+
+impl Default for PageId {
+    fn default() -> Self {
+        PageId::Chat(ChatId::default())
+    }
 }
 
 pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAction> {
@@ -90,8 +106,19 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
                 .map(NavigationAction::Settings);
 
             Task::batch([settings_task, reload_task])
+        },
+        NavigationAction::LoadChatHistory => {
+            Task::perform(load_chat_summaries(state.settings.config.chat_history_dir.clone()), NavigationAction::ChatHistoryLoaded)
+        },
+        NavigationAction::ChatHistoryLoaded(summaries) => {
+            state.chat_summaries = summaries;
+            Task::none()
         }
     }
+}
+
+async fn load_chat_summaries(chat_history_dir: String) -> Vec<ChatSummary> {
+    list_chat_summaries(&chat_history_dir).await.unwrap_or_default()
 }
 
 pub fn subscription(state: &Ergon) -> Subscription<NavigationAction> {
@@ -99,10 +126,10 @@ pub fn subscription(state: &Ergon) -> Subscription<NavigationAction> {
 }
 
 pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {
-    let navigation = build_navigation_bar(&state.current_page);
+    let navigation = build_navigation_bar(&state);
 
     let page_content = match &state.current_page {
-        PageId::Chat => state
+        PageId::Chat(_) => state
             .chat
             .view(&state.settings.config.theme)
             .map(NavigationAction::Chat),
@@ -115,25 +142,44 @@ pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {
         .into()
 }
 
-fn build_navigation_bar(current_page: &PageId) -> Element<'static, NavigationAction> {
+fn build_navigation_bar(state: &Ergon) -> Element<'static, NavigationAction> {
     column![
-        build_chat_history_list().map(|_| NavigationAction::Navigate(PageId::Chat)),
-        button("Settings").on_press_maybe(if current_page != &PageId::Settings {
+        build_chat_history_list(&state),
+        button("Settings").on_press_maybe(if &state.current_page != &PageId::Settings {
             Some(NavigationAction::Navigate(PageId::Settings))
         } else {
             None
-        }).width(Length::Fill).height(Length::Fixed(40.0)),
+        }).width(Length::Fill).height(Length::Fixed(30.0)),
     ]
     .width(Length::FillPortion(1))
     .spacing(3)
     .into()
 }
 
-fn build_chat_history_list() -> Element<'static, NavigationAction> {
-    column![
-        container("Chat History List (to be implemented)")
+fn build_chat_history_list(state: &Ergon) -> Element<'static, NavigationAction> {
+    let mut items = state.chat_summaries.iter().map(|summary| -> Element<'static, NavigationAction> {
+        let title = if summary.summary.is_empty() {
+            "Untitled Chat".to_string()
+        } else {
+            summary.summary.clone()
+        };
+        button(text(title))
+            .on_press(
+                NavigationAction::Navigate(
+                    PageId::Chat(ChatId::Existing(summary.id.clone()))
+                )
+            )
             .width(Length::Fill)
-    ]
+            .height(Length::Fixed(30.0))
+            .into()
+    }).collect::<Vec<_>>();
+    let new_chat_button: Element<'static, NavigationAction> = button("New Chat").on_press_maybe(if &state.current_page != &PageId::Chat(ChatId::New) {
+        Some(NavigationAction::Navigate(PageId::Chat(ChatId::New)))
+    } else {
+        None
+    }).width(Length::Fill).height(Length::Fixed(30.0)).into();
+    items.insert(0, new_chat_button);
+    column(items)
     .height(Length::Fill)
     .into()
 }

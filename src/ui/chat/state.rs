@@ -15,21 +15,17 @@ use iced_aw::Spinner;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
-    acp::{get_agent_manager, AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason},
+    acp::{AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason, get_agent_manager},
     api::clients::get_model_manager,
     config::Config,
     models::{
         Clients, CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
     },
-    ui::chat::{
-        call_tool, complete_message, load_models, load_tools, models::ChatMessage, prompt_agent,
-        start_agent,
-        tasks::{
-            authenticate_agent, current_session_info, persist_agent_session, resume_agent,
-            AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome,
-        },
-        ChatAction, ChatTarget,
-    },
+    ui::{chat::{
+        ChatAction, ChatTarget, call_tool, complete_message, load_models, load_tools, models::ChatMessage, prompt_agent, start_agent, tasks::{
+            AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome, authenticate_agent, current_session_info, persist_agent_session, resume_agent
+        }
+    }, layout::ChatId},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -43,25 +39,11 @@ pub struct State {
     pending_tool_calls: HashSet<String>,
     files: Option<Vec<FileData>>,
 
-    // ── ACP agent path ────────────────────────────────────────────────
-    /// Where the next prompt is routed. Defaults to LLM.
     pub chat_target: ChatTarget,
-    /// Names of agents currently configured (mirrored from `Config::acp_agents`).
     available_agents: Vec<String>,
-    /// The assistant message currently being streamed by the active agent
-    /// turn, if any. We keep its index into `messages` so successive
-    /// `AgentMessageChunk`s append to the same bubble.
     streaming_agent_message: Option<usize>,
-    /// Auth methods advertised by the active agent. Non-empty means we are
-    /// waiting for the user to pick a sign-in method; the input area renders
-    /// per-method buttons in this state.
     pending_auth_methods: Vec<AuthMethodInfo>,
-    /// Slash commands most recently advertised by the active agent. Rendered
-    /// as a chip row above the input. Cleared when switching targets.
     available_commands: Vec<AvailableCommand>,
-    /// Index of the chat bubble currently rendering the agent's plan, if any.
-    /// Each `Plan` update from the agent is the *complete* current plan, so
-    /// we replace this bubble's contents in place rather than appending.
     plan_message_index: Option<usize>,
 }
 
@@ -323,14 +305,6 @@ impl State {
         }
     }
 
-    /// Render an auth-required notice as a chat bubble. The actual
-    /// "Sign in with X" buttons are rendered as part of the message in
-    /// `messages_view` (a special role discriminator is used).
-    ///
-    /// Implementation note: iced's markdown widget can't render interactive
-    /// buttons inline. For v1 we render the method list as text and surface
-    /// real buttons in the input area while in this state. To avoid a
-    /// second piece of UI state, we encode the methods in a dedicated field.
     fn push_auth_required_bubble(&mut self, methods: Vec<AuthMethodInfo>) {
         let body = if methods.is_empty() {
             "**Authentication required**, but the agent did not advertise any methods.".to_string()
@@ -651,7 +625,6 @@ impl State {
         Task::none()
     }
 
-    /// Name of the agent currently selected as the chat target, if any.
     #[allow(dead_code)]
     pub fn active_agent_name(&self) -> Option<&str> {
         match &self.chat_target {
@@ -660,7 +633,6 @@ impl State {
         }
     }
 
-    /// Refresh the list of agents from `Config`. Called when settings save.
     pub fn refresh_available_agents(&mut self) {
         self.available_agents = Config::default()
             .acp_agents
@@ -745,8 +717,6 @@ impl State {
         Task::none()
     }
 
-    /// Subscription that streams [`AgentEvent`]s from the active ACP session,
-    /// if any. Each event is mapped to [`ChatAction::AgentEvent`].
     pub fn subscription(&self) -> Subscription<ChatAction> {
         match &self.chat_target {
             ChatTarget::Agent(name) => {
@@ -756,7 +726,7 @@ impl State {
         }
     }
 
-    pub fn view<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
+    pub fn view<'a>(&'a self, theme: &'a Theme, chat_id: ChatId) -> Element<'a, ChatAction> {
         let chat_window = column![self.build_message_list(theme), self.build_input_area(),]
             .spacing(10)
             .padding(10);
@@ -767,7 +737,7 @@ impl State {
             .into()
     }
 
-    fn build_message_list<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
+    fn build_message_list<'a>(&'a self, theme: &'a Theme, chat_id: ChatId) -> Element<'a, ChatAction> {
         let rows: Vec<Element<ChatAction>> = self
             .messages
             .iter()
@@ -843,8 +813,6 @@ impl State {
         )
         .width(Length::FillPortion(4));
 
-        // Show the model picker only in LLM mode; in Agent mode the agent owns
-        // its model.
         let model_picker: Element<'_, ChatAction> = if matches!(self.chat_target, ChatTarget::Llm) {
             pick_list(
                 self.available_models
@@ -881,8 +849,6 @@ impl State {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        // Auth row: only present when there are advertised auth methods for
-        // the active agent and no auth attempt is currently in flight.
         let auth_row = self.build_auth_row();
         let cmd_row = self.build_slash_command_row();
         let resume_row = self.build_resume_row();
@@ -900,9 +866,6 @@ impl State {
         col.push(main_row).into()
     }
 
-    /// Build a "Resume last session" row when the active agent has a stored
-    /// session id and is not currently in an auth-required state. Returns
-    /// `None` otherwise.
     fn build_resume_row(&self) -> Option<Element<'_, ChatAction>> {
         let agent = match &self.chat_target {
             ChatTarget::Agent(name) => name.clone(),
@@ -911,8 +874,6 @@ impl State {
         if !self.pending_auth_methods.is_empty() {
             return None;
         }
-        // Check stored session presence (cheap: Config::default reads the
-        // settings file but this view is only re-rendered on state changes).
         let cfg = Config::default();
         let stored = cfg.acp_session_state.get(&agent)?;
         let label = format!(
@@ -930,9 +891,6 @@ impl State {
         Some(row_widgets.into())
     }
 
-    /// Build a horizontal chip row with one button per advertised slash
-    /// command. Returns `None` outside of agent mode or when no commands are
-    /// advertised.
     fn build_slash_command_row(&self) -> Option<Element<'_, ChatAction>> {
         if self.available_commands.is_empty()
             || matches!(self.chat_target, ChatTarget::Llm)
@@ -958,9 +916,6 @@ impl State {
         )).into())
     }
 
-    /// Build the "Sign in with X" button row when the active agent has
-    /// reported an auth-required state. Returns `None` outside of agent mode
-    /// or when there are no pending auth methods.
     fn build_auth_row(&self) -> Option<Element<'_, ChatAction>> {
         if self.pending_auth_methods.is_empty() {
             return None;
@@ -1006,12 +961,6 @@ impl State {
     }
 }
 
-/// Build a stream of [`ChatAction::AgentEvent`]s for the named agent.
-///
-/// Used as the `builder` argument to [`Subscription::run_with`]. We poll the
-/// agent manager every 100ms until the session exists, then subscribe to its
-/// broadcast and forward events. If the session disappears (e.g. user
-/// shutdown), the stream ends.
 #[allow(clippy::ptr_arg)]
 fn agent_event_subscription(agent_name: &String) -> impl iced::futures::Stream<Item = ChatAction> {
     let name = agent_name.clone();
@@ -1025,7 +974,6 @@ fn agent_event_subscription(agent_name: &String) -> impl iced::futures::Stream<I
                         Ok(Some(handle)) => {
                             let receiver = handle.subscribe();
                             let mut bs = BroadcastStream::new(receiver);
-                            // Wait for the first event to dodge a one-cycle gap.
                             let first = bs.next().await;
                             match first {
                                 Some(Ok(ev)) => Some((
@@ -1036,7 +984,6 @@ fn agent_event_subscription(agent_name: &String) -> impl iced::futures::Stream<I
                             }
                         }
                         _ => {
-                            // Backoff before retrying. After ~30 s give up.
                             if attempts > 300 {
                                 return None;
                             }
@@ -1063,7 +1010,6 @@ fn agent_event_subscription(agent_name: &String) -> impl iced::futures::Stream<I
             }
         },
     )
-    // Filter out the synthetic "still waiting" empty events.
     .filter(|action| {
         let keep = !matches!(
             action,
@@ -1345,7 +1291,6 @@ mod tests {
         let action = ChatAction::FileSelected(Some(vec![file_path.clone()]));
         let _ = state.update(action);
 
-        // Not reading actual files. The file reader defaults to None if it can't read the file.
         assert_eq!(state.files, Some(vec![]));
     }
 }
