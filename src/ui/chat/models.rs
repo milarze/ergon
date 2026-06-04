@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use iced::widget::markdown;
 
 use crate::acp::AgentEvent;
+use crate::chat_history::ChatHistory;
 use crate::models::{CompletionResponse, Message, ModelInfo, Tool, ToolCall, ToolCallResult};
 use crate::ui::chat::tasks::{AgentPromptOutcome, AgentStartOutcome};
 
@@ -119,7 +120,6 @@ pub enum ChatAction {
     ToolResponseReceived(Result<ToolCallResult, (String, String)>),
     OpenFileDialog,
     FileSelected(Option<Vec<PathBuf>>),
-
     TargetSelected(ChatTarget),
     AgentStarted(Result<AgentStartOutcome, String>),
     AgentEvent(AgentEvent),
@@ -140,4 +140,8 @@ pub enum ChatAction {
         result: Result<crate::ui::chat::tasks::AgentResumeOutcome, String>,
     },
     PersistAgentSession(Option<crate::ui::chat::tasks::AgentSessionInfo>),
+    SaveChatHistory,
+    ChatHistorySaved(Result<ChatHistory, String>),
+    LoadChatHistory(Option<ChatHistory>),
+    ChatHistoryDeleted(String),
 }

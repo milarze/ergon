@@ -3,29 +3,21 @@ use std::collections::HashSet;
 use base64::Engine as _;
 
 use iced::{
-    futures::{stream, StreamExt},
-    widget::{
-        button, column, container, markdown, pick_list, row, scrollable, text, text_input, Row,
-    },
-    Alignment, Element,
-    Length::{self, Fill, Shrink},
-    Subscription, Task, Theme,
+    Alignment, Element, Length::{self, Fill, Shrink}, Subscription, Task, Theme, futures::{StreamExt, stream}, widget::{
+        Row, button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input
+    }
 };
 use iced_aw::Spinner;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
-    acp::{AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason, get_agent_manager},
-    api::clients::get_model_manager,
-    config::Config,
-    models::{
+    acp::{AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason, get_agent_manager}, api::clients::get_model_manager, chat_history::ChatHistory, config::Config, models::{
         Clients, CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
-    },
-    ui::{chat::{
+    }, ui::chat::{
         ChatAction, ChatTarget, call_tool, complete_message, load_models, load_tools, models::ChatMessage, prompt_agent, start_agent, tasks::{
-            AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome, authenticate_agent, current_session_info, persist_agent_session, resume_agent
+            AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome, authenticate_agent, current_session_info, persist_agent_session, resume_agent, save_chat_history
         }
-    }, layout::ChatId},
+    }
 };
 
 #[derive(Debug, Default, Clone)]
@@ -45,6 +37,9 @@ pub struct State {
     pending_auth_methods: Vec<AuthMethodInfo>,
     available_commands: Vec<AvailableCommand>,
     plan_message_index: Option<usize>,
+
+    loading: bool,
+    chat_id: Option<String>,
 }
 
 impl State {
@@ -95,6 +90,27 @@ impl State {
             ChatAction::ResumeAgent { agent } => self.on_resume_agent(agent),
             ChatAction::AgentResumed { agent, result } => self.on_agent_resumed(agent, result),
             ChatAction::PersistAgentSession(info) => self.on_persist_agent_session(info),
+            ChatAction::SaveChatHistory => Task::none(),
+            ChatAction::ChatHistorySaved(result) => self.chat_history_saved(result),
+            ChatAction::LoadChatHistory(history) => {
+                if let Some(history) = history {
+                    self.messages = history.messages.into_iter().map(|m| m.into()).collect();
+                    self.chat_id = Some(history.id);
+                } else {
+                    self.messages = vec![];
+                    self.chat_id = None;
+                }
+                Task::none()
+            },
+            ChatAction::ChatHistoryDeleted(chat_history_id) => {
+                if let Some(current_id) = &self.chat_id {
+                    if *current_id == chat_history_id {
+                        self.messages = vec![];
+                        self.chat_id = None;
+                    }
+                }
+                Task::none()
+            },
         }
     }
 
@@ -552,7 +568,7 @@ impl State {
             )
         } else {
             self.awaiting_response = false;
-            Task::none()
+            self.save_chat_history()
         }
     }
 
@@ -717,6 +733,24 @@ impl State {
         Task::none()
     }
 
+    fn save_chat_history(&self) -> Task<ChatAction> {
+        Task::perform(save_chat_history(self.messages.clone(), self.chat_id.clone()), ChatAction::ChatHistorySaved)
+    }
+
+    fn chat_history_saved(&mut self, result: Result<ChatHistory, String>) -> Task<ChatAction> {
+        self.chat_id = match result {
+            Ok(history) => {
+                log::info!("Chat history saved with id: {}", history.id);
+                Some(history.id)
+            }
+            Err(err) => {
+                log::error!("Failed to save chat history: {}", err);
+                None
+            }
+        };
+        Task::none()
+    }
+
     pub fn subscription(&self) -> Subscription<ChatAction> {
         match &self.chat_target {
             ChatTarget::Agent(name) => {
@@ -726,18 +760,31 @@ impl State {
         }
     }
 
-    pub fn view<'a>(&'a self, theme: &'a Theme, chat_id: ChatId) -> Element<'a, ChatAction> {
+    pub fn view<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
         let chat_window = column![self.build_message_list(theme), self.build_input_area(),]
             .spacing(10)
             .padding(10);
 
-        container(chat_window)
+        let mut stack = stack![chat_window];
+        if self.loading {
+            stack = stack.push(self.build_loading_view());
+        }
+        container(stack)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
 
-    fn build_message_list<'a>(&'a self, theme: &'a Theme, chat_id: ChatId) -> Element<'a, ChatAction> {
+    fn build_loading_view(&self) -> Element<'_, ChatAction> {
+        container(Spinner::new())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .into()
+    }
+
+    fn build_message_list<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
         let rows: Vec<Element<ChatAction>> = self
             .messages
             .iter()
@@ -1077,6 +1124,8 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
+            loading: false,
+            chat_id: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -1124,6 +1173,8 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
+            loading: false,
+            chat_id: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -1180,6 +1231,8 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
+            loading: false,
+            chat_id: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -1233,6 +1286,8 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
+            loading: false,
+            chat_id: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
