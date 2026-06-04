@@ -532,7 +532,7 @@ impl<'de> Deserialize<'de> for Config {
                 let acp_agents = acp_agents.unwrap_or_default();
                 let acp_session_state = acp_session_state.unwrap_or_default();
                 let oauth_tokens = oauth_tokens.unwrap_or_default();
-                let chat_history_dir = chat_history_dir.unwrap_or_else(|| Config::chat_history_file_path());
+                let chat_history_dir = chat_history_dir.unwrap_or_else(Config::chat_history_file_path);
                 Ok(Config {
                     theme,
                     openai,

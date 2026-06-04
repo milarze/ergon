@@ -22,6 +22,21 @@ impl Default for ChatHistory {
     }
 }
 
+impl ChatHistory {
+    pub fn from_messages(messages: Vec<Message>, chat_id: Option<String>) -> Self {
+        ChatHistory {
+            summary: if let Some(message) =  messages.first() {
+                Some(message.content.iter().filter_map(|c| c.as_text()).collect::<Vec<_>>().join(" "))
+            } else {
+                Some("No messages yet".to_string())
+            },
+            messages,
+            id: chat_id.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::rng(), 16)),
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ChatSummary {
     pub id: String,
@@ -35,7 +50,7 @@ pub async fn store_chat_history(chat_history: ChatHistory, chat_history_dir: &st
     }
 
     Ok(std::fs::write(
-        format!("{}/{}.json", chat_history_dir, chat_history.id),
+        chat_history_file_path(&chat_history.id, chat_history_dir),
         serde_json::to_string(&chat_history)?,
     )?)
 }
@@ -60,7 +75,7 @@ pub async fn list_chat_summaries(chat_history_dir: &str) -> Result<Vec<ChatSumma
 }
 
 pub async fn delete_chat_history(chat_history_id: &str, chat_history_dir: &str) -> Result<()> {
-    let file_path = format!("{}/{}.json", chat_history_dir, chat_history_id);
+    let file_path = chat_history_file_path(chat_history_id, chat_history_dir);
     if std::fs::exists(&file_path).unwrap_or(false) {
         std::fs::remove_file(file_path)?;
         Ok(())
@@ -70,7 +85,7 @@ pub async fn delete_chat_history(chat_history_id: &str, chat_history_dir: &str) 
 }
 
 pub async fn get_chat_history(chat_history_id: &str, chat_history_dir: &str) -> Result<Option<ChatHistory>> {
-    let file_path = format!("{}/{}.json", chat_history_dir, chat_history_id);
+    let file_path = chat_history_file_path(chat_history_id, chat_history_dir);
     if std::fs::exists(&file_path).unwrap_or(false) {
         let content = std::fs::read_to_string(file_path)?;
         let chat_history: ChatHistory = serde_json::from_str(&content)?;
@@ -78,4 +93,8 @@ pub async fn get_chat_history(chat_history_id: &str, chat_history_dir: &str) -> 
     } else {
         Ok(None)
     }
+}
+
+pub fn chat_history_file_path(chat_history_id: &str, chat_history_dir: &str) -> String {
+    format!("{}/{}.json", chat_history_dir, chat_history_id)
 }

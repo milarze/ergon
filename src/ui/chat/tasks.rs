@@ -2,13 +2,10 @@ use rmcp::model::JsonObject;
 use serde_json::Value;
 
 use crate::{
-    acp::{get_agent_manager, AuthMethodInfo, PromptOutcome},
-    api::clients::get_model_manager,
-    models::{
+    acp::{AuthMethodInfo, PromptOutcome, get_agent_manager}, api::clients::get_model_manager, chat_history::{ChatHistory, store_chat_history}, config::Config, models::{
         Clients, CompletionRequest, CompletionResponse, Content, ModelInfo, Tool, ToolCall,
         ToolCallResult,
-    },
-    ui::chat::models::ChatMessage,
+    }, ui::chat::models::ChatMessage
 };
 
 pub async fn complete_message(
@@ -293,5 +290,18 @@ pub async fn resume_agent(
         Ok(_) => Ok(AgentResumeOutcome::Resumed),
         Err(SessionError::AuthRequired { methods }) => Ok(AgentResumeOutcome::AuthRequired(methods)),
         Err(SessionError::Other(e)) => Err(e.to_string()),
+    }
+}
+
+pub async fn save_chat_history(messages: Vec<ChatMessage>, chat_id: Option<String>) -> Result<ChatHistory, String> {
+    let chat_histories_dir = Config::default().chat_history_dir;
+    let chat_history = ChatHistory::from_messages(messages.iter().map(|m| m.clone().into()).collect(), chat_id);
+    let result = store_chat_history(chat_history.clone(), &chat_histories_dir)
+        .await
+        .map_err(|e| e.to_string());
+    if result.is_ok() {
+        Ok(chat_history)
+    } else {
+        Err("Failed to save chat history".to_string())
     }
 }

@@ -27,8 +27,9 @@ impl Ergon {
             settings,
             chat_summaries: Vec::new(),
         };
-        let task = chat_task.map(NavigationAction::Chat);
-        (state, task)
+        let chat_task = chat_task.map(NavigationAction::Chat);
+        let load_summaries_task = Task::perform(load_chat_summaries(state.settings.config.chat_history_dir.clone()), NavigationAction::ChatSummariesLoaded);
+        (state, Task::batch([chat_task, load_summaries_task]))
     }
 }
 
@@ -37,8 +38,11 @@ pub enum NavigationAction {
     Navigate(PageId),
     Chat(chat::ChatAction),
     Settings(settings::SettingsAction),
-    LoadChatHistory,
-    ChatHistoryLoaded(Vec<ChatSummary>),
+    LoadChatSummaries,
+    ChatSummariesLoaded(Vec<ChatSummary>),
+    ChatHistoryLoaded(Option<crate::chat_history::ChatHistory>),
+    DeleteChatHistory(String),
+    ChatHistoryDeleted(String),
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
@@ -63,12 +67,28 @@ impl Default for PageId {
 pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAction> {
     match action {
         NavigationAction::Navigate(page_id) => {
-            state.current_page = page_id;
-            Task::none()
+            state.current_page = page_id.clone();
+            match page_id {
+                PageId::Chat(chat_id) => {
+                    match chat_id {
+                        ChatId::New => Task::perform(async { None }, NavigationAction::ChatHistoryLoaded),
+                        ChatId::Existing(id) => Task::perform(load_chat_history(id.clone(), state.settings.config.chat_history_dir.clone()), NavigationAction::ChatHistoryLoaded),
+                    }
+                }
+                PageId::Settings => Task::none(),
+            }
         }
         NavigationAction::Chat(chat_action) => {
-            let task = state.chat.update(chat_action);
-            task.map(NavigationAction::Chat)
+            let reload_summaries_task = if let chat::ChatAction::ChatHistorySaved(Ok(chat_history)) = &chat_action {
+                state.current_page = PageId::Chat(ChatId::Existing(chat_history.id.clone()));
+                Task::perform(load_chat_summaries(state.settings.config.chat_history_dir.clone()), NavigationAction::ChatSummariesLoaded)
+            } else {
+                Task::none()
+            };
+
+            let chat_task = state.chat.update(chat_action).map(NavigationAction::Chat);
+
+            Task::batch([chat_task, reload_summaries_task])
         }
         NavigationAction::Settings(settings_action) => {
             // Intercept SaveCompleted before forwarding: dispatch reload tasks
@@ -107,13 +127,31 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
 
             Task::batch([settings_task, reload_task])
         },
-        NavigationAction::LoadChatHistory => {
-            Task::perform(load_chat_summaries(state.settings.config.chat_history_dir.clone()), NavigationAction::ChatHistoryLoaded)
+        NavigationAction::LoadChatSummaries => {
+            Task::perform(load_chat_summaries(state.settings.config.chat_history_dir.clone()), NavigationAction::ChatSummariesLoaded)
         },
-        NavigationAction::ChatHistoryLoaded(summaries) => {
+        NavigationAction::ChatSummariesLoaded(summaries) => {
             state.chat_summaries = summaries;
             Task::none()
-        }
+        },
+        NavigationAction::ChatHistoryLoaded(chat_history) => {
+            let task = state.chat.update(chat::ChatAction::LoadChatHistory(chat_history));
+            task.map(NavigationAction::Chat)
+        },
+        NavigationAction::DeleteChatHistory(chat_history_id) => {
+            let delete_task = Task::perform(
+                delete_chat_history(chat_history_id.clone(), state.settings.config.chat_history_dir.clone()),
+                NavigationAction::ChatHistoryDeleted,
+            );
+            Task::batch([delete_task])
+        },
+        NavigationAction::ChatHistoryDeleted(chat_history_id) => {
+            let _ = state.chat.update(chat::ChatAction::ChatHistoryDeleted(chat_history_id.clone()));
+            Task::perform(
+                load_chat_summaries(state.settings.config.chat_history_dir.clone()),
+                NavigationAction::ChatSummariesLoaded,
+            )
+        },
     }
 }
 
@@ -121,12 +159,23 @@ async fn load_chat_summaries(chat_history_dir: String) -> Vec<ChatSummary> {
     list_chat_summaries(&chat_history_dir).await.unwrap_or_default()
 }
 
+async fn load_chat_history(chat_id: String, chat_history_dir: String) -> Option<crate::chat_history::ChatHistory> {
+    crate::chat_history::get_chat_history(&chat_id, &chat_history_dir).await.unwrap_or(None)
+}
+
+async fn delete_chat_history(chat_id: String, chat_history_dir: String) -> String {
+    match crate::chat_history::delete_chat_history(&chat_id, &chat_history_dir).await {
+        Ok(_) => chat_id,
+        Err(_) => String::new(), // Return empty string on failure; could also choose to return Result<String, Error> and handle in update()
+    }
+}
+
 pub fn subscription(state: &Ergon) -> Subscription<NavigationAction> {
     state.chat.subscription().map(NavigationAction::Chat)
 }
 
 pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {
-    let navigation = build_navigation_bar(&state);
+    let navigation = build_navigation_bar(state);
 
     let page_content = match &state.current_page {
         PageId::Chat(_) => state
@@ -144,8 +193,8 @@ pub fn view(state: &Ergon) -> Element<'_, NavigationAction> {
 
 fn build_navigation_bar(state: &Ergon) -> Element<'static, NavigationAction> {
     column![
-        build_chat_history_list(&state),
-        button("Settings").on_press_maybe(if &state.current_page != &PageId::Settings {
+        build_chat_history_list(state),
+        button("Settings").on_press_maybe(if state.current_page != PageId::Settings {
             Some(NavigationAction::Navigate(PageId::Settings))
         } else {
             None
@@ -163,17 +212,24 @@ fn build_chat_history_list(state: &Ergon) -> Element<'static, NavigationAction> 
         } else {
             summary.summary.clone()
         };
-        button(text(title))
-            .on_press(
-                NavigationAction::Navigate(
-                    PageId::Chat(ChatId::Existing(summary.id.clone()))
+        row![
+            button(text(title))
+                .on_press_maybe(
+                    if state.current_page != PageId::Chat(ChatId::Existing(summary.id.clone())) {
+                        Some(NavigationAction::Navigate(PageId::Chat(ChatId::Existing(summary.id.clone()))))
+                    } else {
+                        None
+                    }
                 )
-            )
-            .width(Length::Fill)
-            .height(Length::Fixed(30.0))
-            .into()
+                .width(Length::Fill)
+                .height(Length::Fixed(30.0)),
+            button("-")
+                .on_press(NavigationAction::DeleteChatHistory(summary.id.clone()))
+                .width(Length::Fixed(30.0))
+                .height(Length::Fixed(30.0)),
+        ].into()
     }).collect::<Vec<_>>();
-    let new_chat_button: Element<'static, NavigationAction> = button("New Chat").on_press_maybe(if &state.current_page != &PageId::Chat(ChatId::New) {
+    let new_chat_button: Element<'static, NavigationAction> = button("New Chat").on_press_maybe(if state.current_page != PageId::Chat(ChatId::New) {
         Some(NavigationAction::Navigate(PageId::Chat(ChatId::New)))
     } else {
         None
