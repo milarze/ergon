@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::models::{CompletionRequest, CompletionResponse, Content, Message};
+use crate::{api::clients::Model, models::{CompletionRequest, CompletionResponse, Content, Message}};
 
 pub trait OpenAICompatible {
     async fn request(&self, request: CompletionRequest) -> anyhow::Result<CompletionResponse>;
@@ -43,6 +43,53 @@ pub trait OpenAICompatible {
             .map_err(anyhow::Error::from)
             .unwrap();
         Ok(completion_response)
+    }
+
+    async fn list_models(&self) -> anyhow::Result<Vec<Model>> {
+        log::info!("OpenAIClient: Fetching available models");
+        if self.api_key().is_none() {
+            return Err(anyhow::anyhow!("API key is not set".to_string()));
+        }
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/models", self.endpoint().trim_end_matches('/'));
+
+        let response = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", self.api_key().unwrap()))
+            .header("Content-Type", "application/json")
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let json: serde_json::Value = resp.json().await.map_err(anyhow::Error::from)?;
+                    let models: Vec<_> = json["data"]
+                        .as_array()
+                        .unwrap_or(&vec![])
+                        .iter()
+                        .filter_map(|model| model["id"].as_str())
+                        .map(|s| Model {
+                            name: s.to_string(),
+                            id: s.to_string(),
+                        })
+                        .collect();
+                    log::info!("OpenAIClient: Successfully fetched {} models", models.len());
+                    Ok(models)
+                } else {
+                    log::error!(
+                        "OpenAIClient: List models failed with status: {}",
+                        resp.status()
+                    );
+                    Err(anyhow::anyhow!("Error: {}", resp.status()))
+                }
+            }
+            Err(e) => {
+                log::error!("OpenAIClient: List models request failed: {}", e);
+                Err(anyhow::anyhow!("Request failed: {}", e))
+            }
+        }
     }
 }
 
