@@ -2,7 +2,7 @@
 
 use crate::{
     api::clients::openai_compatible::OpenAICompatible,
-    config::{Config, OpenAIConfig},
+    config::OpenAIConfig,
     models::{CompletionRequest, CompletionResponse},
 };
 
@@ -11,6 +11,12 @@ use super::{ErgonClient, Model};
 #[derive(Debug, Clone)]
 pub struct OpenAIClient {
     config: OpenAIConfig,
+}
+
+impl OpenAIClient {
+    pub fn new(config: OpenAIConfig) -> Self {
+        Self { config }
+    }
 }
 
 impl OpenAICompatible for OpenAIClient {
@@ -49,13 +55,5 @@ impl ErgonClient for OpenAIClient {
 
     async fn list_models(&self) -> anyhow::Result<Vec<Model>> {
         OpenAICompatible::list_models(self).await
-    }
-}
-
-impl Default for OpenAIClient {
-    fn default() -> Self {
-        OpenAIClient {
-            config: Config::default().openai,
-        }
     }
 }

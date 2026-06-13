@@ -42,12 +42,17 @@ where
     }
 }
 
-#[derive(Debug, EnumIter, Clone, Default, PartialEq)]
+#[derive(Debug, EnumIter, Clone, PartialEq)]
 pub enum Clients {
-    #[default]
-    OpenAI,
+    OpenAI(usize),
     Anthropic,
     Vllm,
+}
+
+impl Default for Clients {
+    fn default() -> Self {
+        Clients::OpenAI(0)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
