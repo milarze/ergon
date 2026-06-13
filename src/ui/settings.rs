@@ -91,6 +91,7 @@ pub enum SettingsAction {
     ChangeOpenAIKey(usize, String),
     ChangeOpenAIUrl(usize, String),
     ChangeOpenAIAlias(usize, String),
+    RemoveOpenAIConfig(usize),
     ChangeAnthropicKey(String),
     ChangeAnthropicUrl(String),
     ChangeAnthropicMaxTokens(u32),
@@ -203,6 +204,11 @@ impl State {
                     element.alias = alias;
                 } else {
                     log::warn!("ChangeOpenAIAlias: no OpenAI config at index {}", index);
+                }
+            }
+            SettingsAction::RemoveOpenAIConfig(index) => {
+                if index < self.config.openai_compatible.len() {
+                    self.config.openai_compatible.remove(index);
                 }
             }
             SettingsAction::ChangeAnthropicKey(api_key) => {
@@ -529,8 +535,13 @@ impl State {
                 row![
                     text_input("Alias", &openai_config.alias)
                         .on_input(move |alias| SettingsAction::ChangeOpenAIAlias(index, alias)),
+                    text_input("Enter API Key", &self.config.openai_compatible[index].api_key)
+                        .on_input(move |api_key| SettingsAction::ChangeOpenAIKey(index, api_key)),
+                    text_input("Enter Endpoint", &self.config.openai_compatible[0].endpoint)
+                        .on_input(move |endpoint| SettingsAction::ChangeOpenAIUrl(index, endpoint)),
+
                     button(iced_fonts::lucide::trash())
-                        .on_press(SettingsAction::RemoveMcpConfig(index))
+                        .on_press(SettingsAction::RemoveOpenAIConfig(index))
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
