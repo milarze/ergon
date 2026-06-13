@@ -353,7 +353,7 @@ impl Serialize for Config {
         };
         let mut state = serializer.serialize_struct("Config", 7)?;
         state.serialize_field("theme", theme_name)?;
-        state.serialize_field("openai", &self.openai_compatible)?;
+        state.serialize_field("openai_compatible", &self.openai_compatible)?;
         state.serialize_field("anthropic", &self.anthropic)?;
         state.serialize_field("vllm", &self.vllm)?;
         state.serialize_field("mcp", &self.mcp_configs)?;
@@ -584,7 +584,7 @@ mod tests {
         let serialized = serde_json::to_string(&config).unwrap();
         assert!(serialized.contains("\"theme\":\"Dark\""));
         assert!(serialized
-            .contains("\"openai\":{\"api_key\":\"\",\"endpoint\":\"https://api.openai.com/v1/\",\"alias\":\"OpenAI\"}"));
+            .contains("\"openai_compatible\":[{\"api_key\":\"\",\"endpoint\":\"https://api.openai.com/v1/\",\"alias\":\"OpenAI\"}]"));
         assert!(serialized.contains(
             "\"anthropic\":{\"api_key\":\"\",\"endpoint\":\"https://api.anthropic.com/v1/\",\"max_tokens\":1024}"
         ));
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn test_deserialize_config() {
         let json =
-            r#"{"theme":"Light","openai":{"api_key":"","endpoint":"https://api.openai.com/v1/","alias":"OpenAI"}}"#;
+            r#"{"theme":"Light","openai_compatible":[{"api_key":"","endpoint":"https://api.openai.com/v1/","alias":"OpenAI"}]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Light);
         assert_eq!(config.openai_compatible[0].api_key, "");
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_without_anthropic() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}}"#;
+        let json = r#"{"theme":"Dark","openai_compatible":[{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_with_anthropic() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
+        let json = r#"{"theme":"Dark","openai_compatible":[{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}],"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
@@ -639,15 +639,14 @@ mod tests {
         let json = r#"{"theme":"Dark","anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
-        assert_eq!(config.openai_compatible[0].api_key, "");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(config.openai_compatible.len(), 0);
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
     }
 
     #[test]
     fn test_deserialize_config_with_vllm() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"}}"#;
+        let json = r#"{"theme":"Dark","openai_compatible":[{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}],"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
@@ -661,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_without_vllm() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
+        let json = r#"{"theme":"Dark","openai_compatible":[{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}],"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
@@ -675,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_with_mcp() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"name":"stdio-mcp","command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"name":"http-mcp","endpoint":"http://localhost:9000/v1/"}}]}"#;
+        let json = r#"{"theme":"Dark","openai_compatible":[{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}],"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"},"mcp":[{"Stdio":{"name":"stdio-mcp","command":"python3","args":["-u","mcp_stdio.py"]}},{"StreamableHttp":{"name":"http-mcp","endpoint":"http://localhost:9000/v1/"}}]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
@@ -857,7 +856,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_config_without_mcp() {
-        let json = r#"{"theme":"Dark","openai":{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"},"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"}}"#;
+        let json = r#"{"theme":"Dark","openai_compatible":[{"api_key":"test_key","endpoint":"https://api.openai.com/v1/"}],"anthropic":{"api_key":"test_anthropic_key","endpoint":"https://api.anthropic.com/v1/","max_tokens":1024},"vllm":{"endpoint":"https://vllm.cluster.local/v1/","model":"google/gemma-3-270m"}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");

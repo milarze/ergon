@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 mod openai_compatible;
 
+use crate::config::Config;
 pub use crate::models::{Clients, CompletionRequest, CompletionResponse, ModelInfo};
 
 pub mod anthropic;
@@ -22,10 +23,15 @@ impl Clients {
         request: CompletionRequest,
     ) -> anyhow::Result<CompletionResponse> {
         match self {
-            Clients::OpenAI => {
-                openai::OpenAIClient::default()
-                    .complete_message(request)
-                    .await
+            Clients::OpenAI(index) => {
+                if let Some(openai_config) = Config::default().openai_compatible.get(*index) {
+                    let openai_client = openai::OpenAIClient::new(openai_config.to_owned());
+                    openai_client
+                        .complete_message(request)
+                        .await
+                } else {
+                    Err(anyhow::anyhow!("Invalid OpenAI client index: {}", index))
+                }
             }
             Clients::Anthropic => {
                 anthropic::AnthropicClient::default()
@@ -58,20 +64,10 @@ impl ModelManager {
     pub async fn fetch_models(&self) -> Result<(), String> {
         let mut all_models = Vec::new();
 
-        let openai_client = openai::OpenAIClient::default();
-        match openai_client.list_models().await {
-            Ok(models) => {
-                for model in models {
-                    all_models.push(ModelInfo {
-                        name: model.name,
-                        id: model.id,
-                        client: crate::models::Clients::OpenAI,
-                    });
-                }
-            }
-            Err(e) => {
-                log::warn!("Failed to fetch OpenAI models: {}", e);
-            }
+        for (index, openai_config) in Config::default().openai_compatible.iter().enumerate() {
+            let openai_client = openai::OpenAIClient::new(openai_config.clone());
+            let mut models = self.get_openai_compatible_models(index, openai_client).await;
+            all_models.append(&mut models);
         }
 
         let anthropic_client = anthropic::AnthropicClient::default();
@@ -129,6 +125,20 @@ impl ModelManager {
             .read()
             .map_err(|_| "Failed to acquire read lock")?;
         Ok(models.iter().find(|m| m.name == name).cloned())
+    }
+
+    async fn get_openai_compatible_models(&self, index: usize, openai_client: openai::OpenAIClient) -> Vec<ModelInfo> {
+        let mut models = Vec::new();
+        if let Ok(openai_models) = openai_client.list_models().await {
+            for model in openai_models {
+                models.push(ModelInfo {
+                    name: model.name,
+                    id: model.id,
+                    client: crate::models::Clients::OpenAI(index),
+                });
+            }
+        }
+        models
     }
 }
 

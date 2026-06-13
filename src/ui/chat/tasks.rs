@@ -54,36 +54,14 @@ pub async fn load_models() -> Vec<ModelInfo> {
             match manager.get_models() {
                 Ok(models) => models,
                 Err(_) => {
-                    // Fallback to hardcoded models
-                    vec![
-                        ModelInfo {
-                            name: "gpt-4o-mini".to_string(),
-                            id: "gpt-4o-mini".to_string(),
-                            client: Clients::OpenAI,
-                        },
-                        ModelInfo {
-                            name: "Claude 3.5 Sonnet".to_string(),
-                            id: "claude-3-5-sonnet-20241022".to_string(),
-                            client: Clients::Anthropic,
-                        },
-                    ]
+                    log::error!("Failed to get models from manager after fetching");
+                    vec![]
                 }
             }
         }
         Err(_) => {
-            // Fallback to hardcoded models
-            vec![
-                ModelInfo {
-                    name: "gpt-4o-mini".to_string(),
-                    id: "gpt-4o-mini".to_string(),
-                    client: Clients::OpenAI,
-                },
-                ModelInfo {
-                    name: "Claude 3.5 Sonnet".to_string(),
-                    id: "claude-3-5-sonnet-20241022".to_string(),
-                    client: Clients::Anthropic,
-                },
-            ]
+            log::error!("Failed to get models from manager after fetching");
+            vec![]
         }
     }
 }
