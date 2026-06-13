@@ -162,7 +162,7 @@ impl State {
         } else {
             log::error!("Selected model not found in available models");
             self.awaiting_response = false;
-            return Task::none();
+            Task::perform(async { "Selected model not available".into() }, ChatAction::SendMessageError)
         }
     }
 
