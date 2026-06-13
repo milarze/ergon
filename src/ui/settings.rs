@@ -6,7 +6,7 @@ use iced_aw::number_input;
 
 use crate::config::{
     AcpAgentConfig, Config, McpAuthConfig, McpConfig, McpStdioConfig,
-    McpStreamableHttpConfig,
+    McpStreamableHttpConfig, OpenAIConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,8 +87,10 @@ pub struct State {
 #[derive(Debug, Clone)]
 pub enum SettingsAction {
     ChangeTheme(Theme),
-    ChangeOpenAIKey(String),
-    ChangeOpenAIUrl(String),
+    AddOpenAIConfig,
+    ChangeOpenAIKey(usize, String),
+    ChangeOpenAIUrl(usize, String),
+    ChangeOpenAIAlias(usize, String),
     ChangeAnthropicKey(String),
     ChangeAnthropicUrl(String),
     ChangeAnthropicMaxTokens(u32),
@@ -143,7 +145,7 @@ impl State {
 
     /// Returns true if any LLM provider config changed between `old` and `new`.
     fn llm_configs_changed(old: &Config, new: &Config) -> bool {
-        old.openai != new.openai || old.anthropic != new.anthropic || old.vllm != new.vllm
+        old.openai_compatible != new.openai_compatible || old.anthropic != new.anthropic || old.vllm != new.vllm
     }
 
     /// Returns true if the MCP server list changed.
@@ -179,11 +181,29 @@ impl State {
             SettingsAction::ChangeTheme(theme) => {
                 self.config.theme = theme;
             }
-            SettingsAction::ChangeOpenAIKey(api_key) => {
-                self.config.openai.api_key = api_key;
+            SettingsAction::AddOpenAIConfig => {
+                self.config.openai_compatible.push(OpenAIConfig::default());
             }
-            SettingsAction::ChangeOpenAIUrl(endpoint) => {
-                self.config.openai.endpoint = endpoint;
+            SettingsAction::ChangeOpenAIKey(index, api_key) => {
+                if let Some(element) = self.config.openai_compatible.get_mut(index) {
+                    element.api_key = api_key;
+                } else {
+                    log::warn!("ChangeOpenAIKey: no OpenAI config at index {}", index);
+                }
+            }
+            SettingsAction::ChangeOpenAIUrl(index, endpoint) => {
+                if let Some(element) = self.config.openai_compatible.get_mut(index) {
+                    element.endpoint = endpoint;
+                } else {
+                    log::warn!("ChangeOpenAIUrl: no OpenAI config at index {}", index);
+                }
+            }
+            SettingsAction::ChangeOpenAIAlias(index, alias) => {
+                if let Some(element) = self.config.openai_compatible.get_mut(index) {
+                    element.alias = alias;
+                } else {
+                    log::warn!("ChangeOpenAIAlias: no OpenAI config at index {}", index);
+                }
             }
             SettingsAction::ChangeAnthropicKey(api_key) => {
                 self.config.anthropic.api_key = api_key;
@@ -502,17 +522,24 @@ impl State {
         .align_y(Alignment::Center)
     }
 
-    fn openai_view(&self) -> iced::widget::Row<'_, SettingsAction> {
-        row![
-            text("OpenAI API Key:"),
-            text_input("Enter API Key", &self.config.openai.api_key)
-                .on_input(SettingsAction::ChangeOpenAIKey),
-            text("Endpoint:"),
-            text_input("Enter Endpoint", &self.config.openai.endpoint)
-                .on_input(SettingsAction::ChangeOpenAIUrl),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center)
+    fn openai_view(&self) -> iced::widget::Column<'_, SettingsAction> {
+        let mut column = column![text("OpenAI Compatible:").size(18)];
+        for (index, openai_config) in self.config.openai_compatible.iter().enumerate() {
+            column = column.push(
+                row![
+                    text_input("Alias", &openai_config.alias)
+                        .on_input(move |alias| SettingsAction::ChangeOpenAIAlias(index, alias)),
+                    button(iced_fonts::lucide::trash())
+                        .on_press(SettingsAction::RemoveMcpConfig(index))
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+            );
+        }
+        column
+            .push(button(iced_fonts::lucide::plus()).on_press(SettingsAction::AddOpenAIConfig))
+            .spacing(10)
+            .align_x(Alignment::Center)
     }
 
     fn anthropic_view(&self) -> iced::widget::Row<'_, SettingsAction> {
@@ -819,17 +846,40 @@ mod tests {
     #[test]
     fn test_update_openai_key() {
         let mut state = State::default();
-        let _ = state.update(SettingsAction::ChangeOpenAIKey("new_api_key".to_string()));
-        assert_eq!(state.config.openai.api_key, "new_api_key");
+        state.config.openai_compatible.push(OpenAIConfig {
+            api_key: String::new(),
+            endpoint: "https://api.openai.com/v1/".to_string(),
+            alias: "OpenAI".into(),
+        });
+        let _ = state.update(SettingsAction::ChangeOpenAIKey(0, "new_api_key".to_string()));
+        assert_eq!(state.config.openai_compatible[0].api_key, "new_api_key");
     }
 
     #[test]
     fn test_update_openai_url() {
         let mut state = State::default();
+        state.config.openai_compatible.push(OpenAIConfig {
+            api_key: String::new(),
+            endpoint: "https://api.openai.com/v1/".to_string(),
+            alias: "OpenAI".into(),
+        });
         let _ = state.update(SettingsAction::ChangeOpenAIUrl(
+            0,
             "https://new.endpoint.com".to_string(),
         ));
-        assert_eq!(state.config.openai.endpoint, "https://new.endpoint.com");
+        assert_eq!(state.config.openai_compatible[0].endpoint, "https://new.endpoint.com");
+    }
+
+    #[test]
+    fn test_update_openai_alias() {
+        let mut state = State::default();
+        state.config.openai_compatible.push(OpenAIConfig {
+            api_key: String::new(),
+            endpoint: "https://api.openai.com/v1/".to_string(),
+            alias: "OpenAI".into(),
+        });
+        let _ = state.update(SettingsAction::ChangeOpenAIAlias(0, "NewAlias".to_string()));
+        assert_eq!(state.config.openai_compatible[0].alias, "NewAlias");
     }
 
     #[test]
@@ -881,10 +931,11 @@ mod tests {
         let mut state = State {
             config: Config {
                 theme: Theme::Light,
-                openai: OpenAIConfig {
+                openai_compatible: vec![OpenAIConfig {
                     api_key: String::new(),
                     endpoint: "https://api.openai.com/v1/".to_string(),
-                },
+                    alias: "OpenAI".into(),
+                }],
                 anthropic: AnthropicConfig {
                     api_key: String::new(),
                     endpoint: "https://api.anthropic.com/v1/".to_string(),
@@ -905,8 +956,9 @@ mod tests {
             auth_status: HashMap::new(),
         };
         let _ = state.update(SettingsAction::ChangeTheme(Theme::Dark));
-        let _ = state.update(SettingsAction::ChangeOpenAIKey("test_key".to_string()));
+        let _ = state.update(SettingsAction::ChangeOpenAIKey(0, "test_key".to_string()));
         let _ = state.update(SettingsAction::ChangeOpenAIUrl(
+            0,
             "https://api.test.com".to_string(),
         ));
         let _ = state.update(SettingsAction::ChangeAnthropicKey("hello".to_string()));
@@ -918,8 +970,9 @@ mod tests {
 
         // Assuming update_settings persists the changes, we can check the config
         assert_eq!(state.config.theme, Theme::Dark);
-        assert_eq!(state.config.openai.api_key, "test_key");
-        assert_eq!(state.config.openai.endpoint, "https://api.test.com");
+        assert_eq!(state.config.openai_compatible[0].api_key, "test_key");
+        assert_eq!(state.config.openai_compatible[0].endpoint, "https://api.test.com");
+        assert_eq!(state.config.openai_compatible[0].alias, "OpenAI");
 
         assert_eq!(state.config.anthropic.api_key, "hello");
         assert_eq!(
@@ -1054,10 +1107,11 @@ mod tests {
     fn test_llm_configs_changed_detects_diffs() {
         let a = Config {
             theme: Theme::Dark,
-            openai: OpenAIConfig {
+            openai_compatible: vec![OpenAIConfig {
                 api_key: "a".into(),
                 endpoint: "http://a".into(),
-            },
+                alias: "OpenAI".into(),
+            }],
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![],
@@ -1069,7 +1123,7 @@ mod tests {
         };
         let mut b = a.clone();
         assert!(!State::llm_configs_changed(&a, &b));
-        b.openai.api_key = "changed".into();
+        b.openai_compatible[0].api_key = "changed".into();
         assert!(State::llm_configs_changed(&a, &b));
 
         let mut c = a.clone();
@@ -1085,7 +1139,7 @@ mod tests {
     fn test_mcp_configs_changed_detects_diffs() {
         let a = Config {
             theme: Theme::Dark,
-            openai: OpenAIConfig::default(),
+            openai_compatible: vec![OpenAIConfig::default()],
             anthropic: AnthropicConfig::default(),
             vllm: VllmConfig::default(),
             mcp_configs: vec![],

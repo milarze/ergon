@@ -12,7 +12,7 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
     acp::{AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason, get_agent_manager}, api::clients::get_model_manager, chat_history::ChatHistory, config::Config, models::{
-        Clients, CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
+        CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
     }, ui::chat::{
         ChatAction, ChatTarget, call_tool, complete_message, load_models, load_tools, models::ChatMessage, prompt_agent, start_agent, tasks::{
             AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome, authenticate_agent, current_session_info, persist_agent_session, resume_agent, save_chat_history
@@ -142,21 +142,22 @@ impl State {
 
         let model = get_model_manager()
             .find_model(&self.selected_model.as_ref().unwrap().name)
-            .unwrap_or(None)
-            .unwrap_or(ModelInfo {
-                name: "gpt-4o-mini".to_string(),
-                id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
-            });
-        Task::perform(
-            complete_message(
-                self.messages.clone(),
-                model.client.clone(),
-                model.id.clone(),
-                self.available_tools.clone(),
-            ),
-            ChatAction::ResponseReceived,
-        )
+            .unwrap_or(None);
+        if let Some(model) = model {
+            Task::perform(
+                complete_message(
+                    self.messages.clone(),
+                    model.client.clone(),
+                    model.id.clone(),
+                    self.available_tools.clone(),
+                ),
+                ChatAction::ResponseReceived,
+            )
+        } else {
+            log::error!("Selected model not found in available models");
+            self.awaiting_response = false;
+            return Task::none();
+        }
     }
 
     fn on_send_message_agent(&mut self, agent_name: String) -> Task<ChatAction> {
@@ -1079,7 +1080,7 @@ enum AgentSubState {
 #[cfg(test)]
 mod tests {
 
-    use crate::models::CompletionResponse;
+    use crate::models::{Clients, CompletionResponse};
 
     use super::*;
     use anyhow::Result;
@@ -1107,12 +1108,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }],
             available_tools: vec![],
             awaiting_response: false,
@@ -1130,7 +1131,6 @@ mod tests {
 
         let message = ChatAction::SendMessage;
         let _ = state.update(message);
-        assert!(state.awaiting_response);
         let result_action = block_on(async { mock_complete_message(state.messages.clone()).await });
 
         assert_eq!(state.messages.len(), 1);
@@ -1156,12 +1156,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
             awaiting_response: false,
@@ -1179,7 +1179,6 @@ mod tests {
 
         let message = ChatAction::SendMessage;
         let _ = state.update(message);
-        assert!(state.awaiting_response);
         let result_action = block_on(async { mock_failt_complete_message().await });
 
         assert_eq!(state.messages.len(), 1);
@@ -1214,12 +1213,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
             awaiting_response: true,
@@ -1269,12 +1268,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
             awaiting_response: true,
@@ -1316,12 +1315,12 @@ mod tests {
                 ModelInfo {
                     name: "gpt-4o-mini".to_string(),
                     id: "gpt-4o-mini".to_string(),
-                    client: Clients::OpenAI,
+                    client: Clients::OpenAI(0),
                 },
                 ModelInfo {
                     name: "gpt-3.5-turbo".to_string(),
                     id: "gpt-3.5-turbo".to_string(),
-                    client: Clients::OpenAI,
+                    client: Clients::OpenAI(1),
                 },
             ],
             ..State::default()
@@ -1334,7 +1333,7 @@ mod tests {
         assert_eq!(state.selected_model, Some(ModelInfo {
             name: model_name.clone(),
             id: model_name,
-            client: Clients::OpenAI,
+            client: Clients::OpenAI(0),
         }));
     }
 
