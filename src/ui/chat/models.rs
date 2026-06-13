@@ -111,6 +111,7 @@ impl std::fmt::Display for ChatTarget {
 pub enum ChatAction {
     InputChanged(String),
     SendMessage,
+    SendMessageError(String),
     ResponseReceived(CompletionResponse),
     ModelSelected(String),
     ModelsLoaded(Vec<ModelInfo>),
@@ -144,4 +145,5 @@ pub enum ChatAction {
     ChatHistorySaved(Result<ChatHistory, String>),
     LoadChatHistory(Option<ChatHistory>),
     ChatHistoryDeleted(String),
+    CloseErrorCard,
 }

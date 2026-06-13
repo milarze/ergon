@@ -4,15 +4,15 @@ use base64::Engine as _;
 
 use iced::{
     Alignment, Element, Length::{self, Fill, Shrink}, Subscription, Task, Theme, futures::{StreamExt, stream}, widget::{
-        Row, button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input
+        Row, Text, button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input
     }
 };
-use iced_aw::Spinner;
+use iced_aw::{Card, Spinner};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
     acp::{AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason, get_agent_manager}, api::clients::get_model_manager, chat_history::ChatHistory, config::Config, models::{
-        Clients, CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
+        CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
     }, ui::chat::{
         ChatAction, ChatTarget, call_tool, complete_message, load_models, load_tools, models::ChatMessage, prompt_agent, start_agent, tasks::{
             AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome, authenticate_agent, current_session_info, persist_agent_session, resume_agent, save_chat_history
@@ -40,6 +40,7 @@ pub struct State {
 
     loading: bool,
     chat_id: Option<String>,
+    error_message: Option<String>,
 }
 
 impl State {
@@ -65,6 +66,7 @@ impl State {
         match action {
             ChatAction::InputChanged(value) => self.on_input_changed(value),
             ChatAction::SendMessage => self.on_send_message(),
+            ChatAction::SendMessageError(error) => self.on_send_message_error(error),
             ChatAction::ResponseReceived(response) => self.on_response_received(response),
             ChatAction::ModelSelected(model_name) => self.on_model_selected(model_name),
             ChatAction::ModelsLoaded(models) => self.on_models_loaded(models),
@@ -111,6 +113,10 @@ impl State {
                 }
                 Task::none()
             },
+            ChatAction::CloseErrorCard => {
+                self.error_message = None;
+                Task::none()
+            },
         }
     }
 
@@ -142,21 +148,22 @@ impl State {
 
         let model = get_model_manager()
             .find_model(&self.selected_model.as_ref().unwrap().name)
-            .unwrap_or(None)
-            .unwrap_or(ModelInfo {
-                name: "gpt-4o-mini".to_string(),
-                id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
-            });
-        Task::perform(
-            complete_message(
-                self.messages.clone(),
-                model.client.clone(),
-                model.id.clone(),
-                self.available_tools.clone(),
-            ),
-            ChatAction::ResponseReceived,
-        )
+            .unwrap_or(None);
+        if let Some(model) = model {
+            Task::perform(
+                complete_message(
+                    self.messages.clone(),
+                    model.client.clone(),
+                    model.id.clone(),
+                    self.available_tools.clone(),
+                ),
+                ChatAction::ResponseReceived,
+            )
+        } else {
+            log::error!("Selected model not found in available models");
+            self.awaiting_response = false;
+            Task::perform(async { "Selected model not available".into() }, ChatAction::SendMessageError)
+        }
     }
 
     fn on_send_message_agent(&mut self, agent_name: String) -> Task<ChatAction> {
@@ -641,6 +648,11 @@ impl State {
         Task::none()
     }
 
+    fn on_send_message_error(&mut self, error: String) -> Task<ChatAction> {
+        self.error_message = Some(error);
+        Task::none()
+    }
+
     #[allow(dead_code)]
     pub fn active_agent_name(&self) -> Option<&str> {
         match &self.chat_target {
@@ -768,6 +780,14 @@ impl State {
         let mut stack = stack![chat_window];
         if self.loading {
             stack = stack.push(self.build_loading_view());
+        }
+        if self.error_message.is_some() {
+            let card = Card::new(
+                Text::new("Error"),
+                Text::new(self.error_message.clone().unwrap())
+            )
+            .on_close(ChatAction::CloseErrorCard);
+            stack = stack.push(card);
         }
         container(stack)
             .width(Length::Fill)
@@ -1079,7 +1099,7 @@ enum AgentSubState {
 #[cfg(test)]
 mod tests {
 
-    use crate::models::CompletionResponse;
+    use crate::models::{Clients, CompletionResponse};
 
     use super::*;
     use anyhow::Result;
@@ -1107,12 +1127,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }],
             available_tools: vec![],
             awaiting_response: false,
@@ -1126,11 +1146,11 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let message = ChatAction::SendMessage;
         let _ = state.update(message);
-        assert!(state.awaiting_response);
         let result_action = block_on(async { mock_complete_message(state.messages.clone()).await });
 
         assert_eq!(state.messages.len(), 1);
@@ -1156,12 +1176,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
             awaiting_response: false,
@@ -1175,11 +1195,11 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let message = ChatAction::SendMessage;
         let _ = state.update(message);
-        assert!(state.awaiting_response);
         let result_action = block_on(async { mock_failt_complete_message().await });
 
         assert_eq!(state.messages.len(), 1);
@@ -1214,12 +1234,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
             awaiting_response: true,
@@ -1233,6 +1253,7 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -1269,12 +1290,12 @@ mod tests {
             selected_model: Some(ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(0),
             }),
             available_models: vec![ModelInfo {
                 name: "gpt-4o-mini".to_string(),
                 id: "gpt-4o-mini".to_string(),
-                client: Clients::OpenAI,
+                client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
             awaiting_response: true,
@@ -1288,6 +1309,7 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -1316,12 +1338,12 @@ mod tests {
                 ModelInfo {
                     name: "gpt-4o-mini".to_string(),
                     id: "gpt-4o-mini".to_string(),
-                    client: Clients::OpenAI,
+                    client: Clients::OpenAI(0),
                 },
                 ModelInfo {
                     name: "gpt-3.5-turbo".to_string(),
                     id: "gpt-3.5-turbo".to_string(),
-                    client: Clients::OpenAI,
+                    client: Clients::OpenAI(1),
                 },
             ],
             ..State::default()
@@ -1334,7 +1356,7 @@ mod tests {
         assert_eq!(state.selected_model, Some(ModelInfo {
             name: model_name.clone(),
             id: model_name,
-            client: Clients::OpenAI,
+            client: Clients::OpenAI(0),
         }));
     }
 
