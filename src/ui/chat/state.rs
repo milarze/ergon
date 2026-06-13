@@ -4,10 +4,10 @@ use base64::Engine as _;
 
 use iced::{
     Alignment, Element, Length::{self, Fill, Shrink}, Subscription, Task, Theme, futures::{StreamExt, stream}, widget::{
-        Row, button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input
+        Row, Text, button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input
     }
 };
-use iced_aw::Spinner;
+use iced_aw::{Card, Spinner};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
@@ -40,6 +40,7 @@ pub struct State {
 
     loading: bool,
     chat_id: Option<String>,
+    error_message: Option<String>,
 }
 
 impl State {
@@ -65,6 +66,7 @@ impl State {
         match action {
             ChatAction::InputChanged(value) => self.on_input_changed(value),
             ChatAction::SendMessage => self.on_send_message(),
+            ChatAction::SendMessageError(error) => self.on_send_message_error(error),
             ChatAction::ResponseReceived(response) => self.on_response_received(response),
             ChatAction::ModelSelected(model_name) => self.on_model_selected(model_name),
             ChatAction::ModelsLoaded(models) => self.on_models_loaded(models),
@@ -109,6 +111,10 @@ impl State {
                         self.chat_id = None;
                     }
                 }
+                Task::none()
+            },
+            ChatAction::CloseErrorCard => {
+                self.error_message = None;
                 Task::none()
             },
         }
@@ -642,6 +648,11 @@ impl State {
         Task::none()
     }
 
+    fn on_send_message_error(&mut self, error: String) -> Task<ChatAction> {
+        self.error_message = Some(error);
+        Task::none()
+    }
+
     #[allow(dead_code)]
     pub fn active_agent_name(&self) -> Option<&str> {
         match &self.chat_target {
@@ -769,6 +780,14 @@ impl State {
         let mut stack = stack![chat_window];
         if self.loading {
             stack = stack.push(self.build_loading_view());
+        }
+        if self.error_message.is_some() {
+            let card = Card::new(
+                Text::new("Error"),
+                Text::new(self.error_message.clone().unwrap())
+            )
+            .on_close(ChatAction::CloseErrorCard);
+            stack = stack.push(card);
         }
         container(stack)
             .width(Length::Fill)
@@ -1127,6 +1146,7 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -1175,6 +1195,7 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let message = ChatAction::SendMessage;
@@ -1232,6 +1253,7 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
@@ -1287,6 +1309,7 @@ mod tests {
             plan_message_index: None,
             loading: false,
             chat_id: None,
+            error_message: None,
         };
 
         let response = ChatAction::ResponseReceived(CompletionResponse {
