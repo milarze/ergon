@@ -21,9 +21,6 @@ impl OpenAIClient {
 
 impl OpenAICompatible for OpenAIClient {
     async fn request(&self, request: CompletionRequest) -> anyhow::Result<CompletionResponse> {
-        if self.config.api_key.is_empty() {
-            return Err(anyhow::anyhow!("API key is not set".to_string()));
-        }
         self.request_completion(request).await
     }
 

@@ -537,7 +537,7 @@ impl State {
                         .on_input(move |alias| SettingsAction::ChangeOpenAIAlias(index, alias)),
                     text_input("Enter API Key", &self.config.openai_compatible[index].api_key)
                         .on_input(move |api_key| SettingsAction::ChangeOpenAIKey(index, api_key)),
-                    text_input("Enter Endpoint", &self.config.openai_compatible[0].endpoint)
+                    text_input("Enter Endpoint", &self.config.openai_compatible[index].endpoint)
                         .on_input(move |endpoint| SettingsAction::ChangeOpenAIUrl(index, endpoint)),
 
                     button(iced_fonts::lucide::trash())

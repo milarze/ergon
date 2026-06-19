@@ -16,12 +16,14 @@ pub trait OpenAICompatible {
         let client = reqwest::Client::new();
         let url = format!("{}/chat/completions", self.endpoint().trim_end_matches('/'));
 
-        let json_request = serde_json::json!({
+        let mut json_request = serde_json::json!({
             "model": request.model,
             "messages": request.messages.iter().map(OpenAIMessageAdapter::convert_message).collect::<Vec<_>>(),
-            "temperature": request.temperature,
             "tools": request.tools,
         });
+        if let Some(temperature) = request.temperature {
+            json_request["temperature"] = json!(temperature);
+        }
 
         log::info!("OpenAIClient: Sending request to {}", url);
         log::info!("OpenAIClient: Request payload: {}", json_request);
