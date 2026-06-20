@@ -378,6 +378,10 @@ pub struct CompletionResponse {
     pub created: u64,
     pub model: String,
     pub choices: Vec<Choice>,
+    #[serde(skip)]
+    pub is_error: bool,
+    #[serde(skip)]
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

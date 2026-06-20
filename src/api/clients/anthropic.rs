@@ -238,6 +238,8 @@ impl From<AnthropicCompletionResponse> for CompletionResponse {
                 message: vec![message],
                 finish_reason: response.stop_reason,
             }],
+            is_error: false,
+            error_message: None,
         }
     }
 }

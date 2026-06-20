@@ -43,6 +43,8 @@ pub async fn complete_message(
             created: 0,
             model: "".to_string(),
             choices: vec![],
+            is_error: true,
+            error_message: Some(err.to_string()),
         },
     }
 }

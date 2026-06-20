@@ -548,12 +548,15 @@ impl State {
     fn on_response_received(&mut self, response: CompletionResponse) -> Task<ChatAction> {
         let choices = &response.choices;
         self.input_value.clear();
-        if choices.is_empty() {
-            self.messages
-                .push(Message::assistant("Error: No response from model.".to_string()).into());
-            self.input_value.clear();
+        if response.is_error {
+            log::error!("Error: {:?}", response.error_message);
             self.awaiting_response = false;
-            return Task::none();
+            return Task::perform(async { response.error_message.unwrap_or("Error".to_string()) }, ChatAction::SendMessageError);
+        }
+        if choices.is_empty() {
+            log::error!("No response from model.");
+            self.awaiting_response = false;
+            return Task::perform(async { "No response from model".into() }, ChatAction::SendMessageError);
         }
         self.messages.append(
             choices[0]
@@ -778,20 +781,17 @@ impl State {
             .padding(10);
 
         let mut stack = stack![chat_window];
-        if self.loading {
+        if self.awaiting_response {
             stack = stack.push(self.build_loading_view());
         }
         if self.error_message.is_some() {
-            let card = Card::new(
-                Text::new("Error"),
-                Text::new(self.error_message.clone().unwrap())
-            )
-            .on_close(ChatAction::CloseErrorCard);
-            stack = stack.push(card);
+            stack = stack.push(self.build_error_view());
         }
         container(stack)
             .width(Length::Fill)
             .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
             .into()
     }
 
@@ -801,6 +801,19 @@ impl State {
             .height(Length::Fill)
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
+            .into()
+    }
+
+    fn build_error_view(&self) -> Element<'_, ChatAction> {
+        container(
+            Card::new(
+                Text::new("Error"),
+                Text::new(self.error_message.clone().unwrap())
+            )
+            .on_close(ChatAction::CloseErrorCard)
+        )
+            .align_y(Alignment::Center)
+            .align_x(Alignment::Center)
             .into()
     }
 
@@ -1266,6 +1279,8 @@ mod tests {
                 message: vec![crate::models::Message::assistant("Hi there!".to_string())],
                 finish_reason: "stop".to_string(),
             }],
+            is_error: false,
+            error_message: None,
         });
         let _ = state.update(response);
 
@@ -1318,17 +1333,15 @@ mod tests {
             created: 0,
             model: "gpt-4o-mini".to_string(),
             choices: vec![],
+            is_error: true,
+            error_message: Some("error message".into())
         });
-        let _ = state.update(response);
+        let actions = state.update(response);
 
-        assert_eq!(state.messages.len(), 2);
-        assert_eq!(state.messages[1].message.role, "assistant");
-        assert_eq!(
-            state.messages[1].message.text_content().first(),
-            Some(&&"Error: No response from model.".to_string())
-        );
+        assert_eq!(state.messages.len(), 1);
         assert!(state.input_value.is_empty());
         assert!(!state.awaiting_response);
+        assert_eq!(actions.units(), 1);
     }
 
     #[test]
