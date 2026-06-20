@@ -19,7 +19,7 @@ An LLM chat interface built in Rust.
   - StreamableHTTP
   - STDIO
 - Embedded models (TODO)
-- Conversation management (TODO)
+- Conversation management
 - ACP (Agent Client Protocol)
   - Spawn external agents over stdio
   - Streaming text, thoughts, and tool calls
