@@ -38,7 +38,6 @@ pub struct State {
     available_commands: Vec<AvailableCommand>,
     plan_message_index: Option<usize>,
 
-    loading: bool,
     chat_id: Option<String>,
     error_message: Option<String>,
 }
@@ -1157,7 +1156,6 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
-            loading: false,
             chat_id: None,
             error_message: None,
         };
@@ -1206,7 +1204,6 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
-            loading: false,
             chat_id: None,
             error_message: None,
         };
@@ -1264,7 +1261,6 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
-            loading: false,
             chat_id: None,
             error_message: None,
         };
@@ -1322,7 +1318,6 @@ mod tests {
             pending_auth_methods: Vec::new(),
             available_commands: Vec::new(),
             plan_message_index: None,
-            loading: false,
             chat_id: None,
             error_message: None,
         };
