@@ -31,6 +31,7 @@ agent-client-protocol-tokio = "0.11.1"
 tokio-util = { version = "0.7.18", features = ["compat"] }
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 chrono = "0.4.44"
+sse-stream = "0.2.4"
 
 
 [profile.release]

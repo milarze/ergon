@@ -1025,6 +1025,7 @@ dependencies = [
  "serde_json",
  "simple_logger",
  "slab",
+ "sse-stream",
  "strum",
  "strum_macros",
  "tokio",
@@ -4314,9 +4315,9 @@ dependencies = [
 
 [[package]]
 name = "sse-stream"
-version = "0.2.1"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb4dc4d33c68ec1f27d386b5610a351922656e1fdf5c05bbaad930cd1519479a"
+checksum = "c123f296ade4ec4b8b0f6162116e6629f5146922ca5ab40ca9d3c2e73ab4761e"
 dependencies = [
  "bytes",
  "futures-util",
