@@ -147,6 +147,11 @@ pub fn update(state: &mut Ergon, action: NavigationAction) -> Task<NavigationAct
         },
         NavigationAction::ChatHistoryDeleted(chat_history_id) => {
             let _ = state.chat.update(chat::ChatAction::ChatHistoryDeleted(chat_history_id.clone()));
+            if let PageId::Chat(ChatId::Existing(current_id)) = &state.current_page {
+                if *current_id == chat_history_id {
+                    state.current_page = PageId::Chat(ChatId::New);
+                }
+            }
             Task::perform(
                 load_chat_summaries(state.settings.config.chat_history_dir.clone()),
                 NavigationAction::ChatSummariesLoaded,

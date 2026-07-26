@@ -91,7 +91,6 @@ impl State {
             ChatAction::ResumeAgent { agent } => self.on_resume_agent(agent),
             ChatAction::AgentResumed { agent, result } => self.on_agent_resumed(agent, result),
             ChatAction::PersistAgentSession(info) => self.on_persist_agent_session(info),
-            ChatAction::SaveChatHistory => Task::none(),
             ChatAction::ChatHistorySaved(result) => self.chat_history_saved(result),
             ChatAction::LoadChatHistory(history) => {
                 if let Some(history) = history {

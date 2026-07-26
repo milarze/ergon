@@ -141,7 +141,6 @@ pub enum ChatAction {
         result: Result<crate::ui::chat::tasks::AgentResumeOutcome, String>,
     },
     PersistAgentSession(Option<crate::ui::chat::tasks::AgentSessionInfo>),
-    SaveChatHistory,
     ChatHistorySaved(Result<ChatHistory, String>),
     LoadChatHistory(Option<ChatHistory>),
     ChatHistoryDeleted(String),
