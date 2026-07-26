@@ -919,7 +919,11 @@ impl State {
                 .on_submit(ChatAction::SendMessage)
                 .width(Length::FillPortion(10)),
             button("📁")
-                .on_press(ChatAction::OpenFileDialog)
+                .on_press_maybe(if self.awaiting_response {
+                    None
+                } else {
+                    Some(ChatAction::OpenFileDialog)
+                })
                 .width(Length::FillPortion(1)),
             self.build_send_button(),
             target_picker,
