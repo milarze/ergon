@@ -13,7 +13,7 @@ rand = "0.10.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = "1.0.228"
 serde_json = "1.0.150"
-rmcp = { version = "1.7.0", features = ["client", "transport-io", "transport-streamable-http-client-reqwest", "transport-child-process", "auth"] }
+rmcp = { version = "2.2.0", features = ["client", "transport-io", "transport-streamable-http-client-reqwest", "transport-child-process", "auth"] }
 simple_logger = "5.2.0"
 slab = "0.4.12"
 strum = "0.28.0"
@@ -31,6 +31,7 @@ agent-client-protocol-tokio = "0.11.1"
 tokio-util = { version = "0.7.18", features = ["compat"] }
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 chrono = "0.4.44"
+sse-stream = "0.2.4"
 
 
 [profile.release]
