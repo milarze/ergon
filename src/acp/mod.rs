@@ -28,9 +28,6 @@ pub mod terminal;
 pub mod transport;
 pub mod types;
 
-pub use manager::{get_agent_manager};
+pub use manager::get_agent_manager;
 pub use session::{AgentEvent, PromptOutcome};
-pub use types::{
-    AgentUpdate, AuthMethodInfo, AvailableCommand, 
-    StopReason,
-};
+pub use types::{AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason};

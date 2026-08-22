@@ -1,5 +1,5 @@
-mod api;
 mod acp;
+mod api;
 mod chat_history;
 mod config;
 mod mcp;

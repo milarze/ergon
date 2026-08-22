@@ -186,7 +186,10 @@ impl AcpAgentConfig {
 
     pub fn validate_name(&self) -> bool {
         let name = self.name();
-        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
     }
 
     pub fn set_name(&mut self, new_name: String) {
@@ -329,9 +332,7 @@ impl Config {
         if !settings_dir.exists() {
             std::fs::create_dir_all(&settings_dir).expect("Failed to create settings directory");
         }
-        settings_dir
-            .to_string_lossy()
-            .into_owned()
+        settings_dir.to_string_lossy().into_owned()
     }
 }
 
@@ -510,8 +511,7 @@ impl<'de> Deserialize<'de> for Config {
                             acp_agents = Some(agents);
                         }
                         Fields::AcpSessionState => {
-                            let m = map
-                                .next_value::<HashMap<String, StoredAcpSession>>()?;
+                            let m = map.next_value::<HashMap<String, StoredAcpSession>>()?;
                             acp_session_state = Some(m);
                         }
                         Fields::OAuthTokens => {
@@ -537,7 +537,8 @@ impl<'de> Deserialize<'de> for Config {
                 let acp_agents = acp_agents.unwrap_or_default();
                 let acp_session_state = acp_session_state.unwrap_or_default();
                 let oauth_tokens = oauth_tokens.unwrap_or_default();
-                let chat_history_dir = chat_history_dir.unwrap_or_else(Config::chat_history_file_path);
+                let chat_history_dir =
+                    chat_history_dir.unwrap_or_else(Config::chat_history_file_path);
                 Ok(Config {
                     theme,
                     openai_compatible,
@@ -599,12 +600,14 @@ mod tests {
 
     #[test]
     fn test_deserialize_config() {
-        let json =
-            r#"{"theme":"Light","openai_compatible":[{"api_key":"","endpoint":"https://api.openai.com/v1/","alias":"OpenAI"}]}"#;
+        let json = r#"{"theme":"Light","openai_compatible":[{"api_key":"","endpoint":"https://api.openai.com/v1/","alias":"OpenAI"}]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Light);
         assert_eq!(config.openai_compatible[0].api_key, "");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.openai_compatible[0].alias, "OpenAI");
         assert_eq!(config.anthropic.api_key, "");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
@@ -616,7 +619,10 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.openai_compatible[0].alias, "");
         assert_eq!(config.anthropic.api_key, "");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
@@ -628,7 +634,10 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
         assert_eq!(config.anthropic.max_tokens, 1024);
@@ -650,7 +659,10 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
         assert_eq!(config.anthropic.max_tokens, 1024);
@@ -664,7 +676,10 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
         assert_eq!(config.anthropic.max_tokens, 1024);
@@ -678,7 +693,10 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
         assert_eq!(config.anthropic.max_tokens, 1024);
@@ -860,7 +878,10 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.theme, Theme::Dark);
         assert_eq!(config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(config.openai_compatible[0].endpoint, "https://api.openai.com/v1/");
+        assert_eq!(
+            config.openai_compatible[0].endpoint,
+            "https://api.openai.com/v1/"
+        );
         assert_eq!(config.anthropic.api_key, "test_anthropic_key");
         assert_eq!(config.anthropic.endpoint, "https://api.anthropic.com/v1/");
         assert_eq!(config.anthropic.max_tokens, 1024);

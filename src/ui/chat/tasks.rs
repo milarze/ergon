@@ -2,10 +2,15 @@ use rmcp::model::JsonObject;
 use serde_json::Value;
 
 use crate::{
-    acp::{AuthMethodInfo, PromptOutcome, get_agent_manager}, api::clients::get_model_manager, chat_history::{ChatHistory, store_chat_history}, config::Config, models::{
+    acp::{get_agent_manager, AuthMethodInfo, PromptOutcome},
+    api::clients::get_model_manager,
+    chat_history::{store_chat_history, ChatHistory},
+    config::Config,
+    models::{
         Clients, CompletionRequest, CompletionResponse, Content, ModelInfo, Tool, ToolCall,
         ToolCallResult,
-    }, ui::chat::models::ChatMessage
+    },
+    ui::chat::models::ChatMessage,
 };
 
 pub async fn complete_message(
@@ -52,15 +57,13 @@ pub async fn complete_message(
 pub async fn load_models() -> Vec<ModelInfo> {
     let manager = get_model_manager();
     match manager.fetch_models().await {
-        Ok(_) => {
-            match manager.get_models() {
-                Ok(models) => models,
-                Err(_) => {
-                    log::error!("Failed to get models from manager after fetching");
-                    vec![]
-                }
+        Ok(_) => match manager.get_models() {
+            Ok(models) => models,
+            Err(_) => {
+                log::error!("Failed to get models from manager after fetching");
+                vec![]
             }
-        }
+        },
         Err(_) => {
             log::error!("Failed to get models from manager after fetching");
             vec![]
@@ -164,10 +167,7 @@ pub enum AgentPromptOutcome {
 
 /// Send a single-turn prompt to a running ACP agent. The agent's streamed
 /// updates surface separately via the subscription.
-pub async fn prompt_agent(
-    agent_name: String,
-    text: String,
-) -> Result<AgentPromptOutcome, String> {
+pub async fn prompt_agent(agent_name: String, text: String) -> Result<AgentPromptOutcome, String> {
     use crate::acp::session::SessionError;
     let manager = get_agent_manager();
     let handle = manager
@@ -268,14 +268,20 @@ pub async fn resume_agent(
     let session_id = agent_client_protocol::schema::SessionId::new(stored_session_id);
     match handle.load_session(session_id).await {
         Ok(_) => Ok(AgentResumeOutcome::Resumed),
-        Err(SessionError::AuthRequired { methods }) => Ok(AgentResumeOutcome::AuthRequired(methods)),
+        Err(SessionError::AuthRequired { methods }) => {
+            Ok(AgentResumeOutcome::AuthRequired(methods))
+        }
         Err(SessionError::Other(e)) => Err(e.to_string()),
     }
 }
 
-pub async fn save_chat_history(messages: Vec<ChatMessage>, chat_id: Option<String>) -> Result<ChatHistory, String> {
+pub async fn save_chat_history(
+    messages: Vec<ChatMessage>,
+    chat_id: Option<String>,
+) -> Result<ChatHistory, String> {
     let chat_histories_dir = Config::default().chat_history_dir;
-    let chat_history = ChatHistory::from_messages(messages.iter().map(|m| m.clone().into()).collect(), chat_id);
+    let chat_history =
+        ChatHistory::from_messages(messages.iter().map(|m| m.clone().into()).collect(), chat_id);
     let result = store_chat_history(chat_history.clone(), &chat_histories_dir)
         .await
         .map_err(|e| e.to_string());

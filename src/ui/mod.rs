@@ -1,5 +1,5 @@
 mod chat;
-mod settings;
 mod layout;
+mod settings;
 
-pub use layout::{Ergon, update, init, subscription, view};
+pub use layout::{init, subscription, update, view, Ergon};

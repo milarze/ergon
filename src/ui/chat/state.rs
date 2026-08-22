@@ -3,21 +3,36 @@ use std::collections::HashSet;
 use base64::Engine as _;
 
 use iced::{
-    Alignment, Element, Length::{self, Fill, Shrink}, Subscription, Task, Theme, futures::{StreamExt, stream}, widget::{
-        Row, Text, button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input
-    }
+    futures::{stream, StreamExt},
+    widget::{
+        button, column, container, markdown, pick_list, row, scrollable, stack, text, text_input,
+        Row, Text,
+    },
+    Alignment, Element,
+    Length::{self, Fill, Shrink},
+    Subscription, Task, Theme,
 };
 use iced_aw::{Card, Spinner};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
-    acp::{AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason, get_agent_manager}, api::clients::get_model_manager, chat_history::ChatHistory, config::Config, models::{
-        CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult,
-    }, ui::chat::{
-        ChatAction, ChatTarget, call_tool, complete_message, load_models, load_tools, models::ChatMessage, prompt_agent, start_agent, tasks::{
-            AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome, authenticate_agent, current_session_info, persist_agent_session, resume_agent, save_chat_history
-        }
-    }
+    acp::{
+        get_agent_manager, AgentEvent, AgentUpdate, AuthMethodInfo, AvailableCommand, StopReason,
+    },
+    api::clients::get_model_manager,
+    chat_history::ChatHistory,
+    config::Config,
+    models::{CompletionResponse, FileData, Message, ModelInfo, Tool, ToolCall, ToolCallResult},
+    ui::chat::{
+        call_tool, complete_message, load_models, load_tools,
+        models::ChatMessage,
+        prompt_agent, start_agent,
+        tasks::{
+            authenticate_agent, current_session_info, persist_agent_session, resume_agent,
+            save_chat_history, AgentPromptOutcome, AgentResumeOutcome, AgentStartOutcome,
+        },
+        ChatAction, ChatTarget,
+    },
 };
 
 #[derive(Debug, Default, Clone)]
@@ -28,6 +43,7 @@ pub struct State {
     selected_model: Option<ModelInfo>,
     available_models: Vec<ModelInfo>,
     available_tools: Vec<Tool>,
+    selected_tools: Vec<Tool>,
     pending_tool_calls: HashSet<String>,
     files: Option<Vec<FileData>>,
 
@@ -101,7 +117,7 @@ impl State {
                     self.chat_id = None;
                 }
                 Task::none()
-            },
+            }
             ChatAction::ChatHistoryDeleted(chat_history_id) => {
                 if let Some(current_id) = &self.chat_id {
                     if *current_id == chat_history_id {
@@ -110,11 +126,11 @@ impl State {
                     }
                 }
                 Task::none()
-            },
+            }
             ChatAction::CloseErrorCard => {
                 self.error_message = None;
                 Task::none()
-            },
+            }
         }
     }
 
@@ -153,14 +169,17 @@ impl State {
                     self.messages.clone(),
                     model.client.clone(),
                     model.id.clone(),
-                    self.available_tools.clone(),
+                    self.selected_tools.clone(),
                 ),
                 ChatAction::ResponseReceived,
             )
         } else {
             log::error!("Selected model not found in available models");
             self.awaiting_response = false;
-            Task::perform(async { "Selected model not available".into() }, ChatAction::SendMessageError)
+            Task::perform(
+                async { "Selected model not available".into() },
+                ChatAction::SendMessageError,
+            )
         }
     }
 
@@ -214,10 +233,7 @@ impl State {
         Task::none()
     }
 
-    fn on_agent_started(
-        &mut self,
-        result: Result<AgentStartOutcome, String>,
-    ) -> Task<ChatAction> {
+    fn on_agent_started(&mut self, result: Result<AgentStartOutcome, String>) -> Task<ChatAction> {
         match result {
             Ok(AgentStartOutcome::Ready) => {
                 log::info!("ACP agent ready");
@@ -348,22 +364,17 @@ impl State {
         self.awaiting_response = false;
     }
 
-    fn on_authenticate_agent(
-        &mut self,
-        agent: String,
-        method_id: String,
-    ) -> Task<ChatAction> {
+    fn on_authenticate_agent(&mut self, agent: String, method_id: String) -> Task<ChatAction> {
         self.awaiting_response = true;
         let agent_for_msg = agent.clone();
         let method_for_msg = method_id.clone();
-        Task::perform(
-            authenticate_agent(agent, method_id),
-            move |result| ChatAction::AgentAuthenticated {
+        Task::perform(authenticate_agent(agent, method_id), move |result| {
+            ChatAction::AgentAuthenticated {
                 agent: agent_for_msg.clone(),
                 method_id: method_for_msg.clone(),
                 result,
-            },
-        )
+            }
+        })
     }
 
     fn on_agent_authenticated(
@@ -375,7 +386,11 @@ impl State {
         self.awaiting_response = false;
         match result {
             Ok(()) => {
-                log::info!("Authenticated agent '{}' with method '{}'", agent, method_id);
+                log::info!(
+                    "Authenticated agent '{}' with method '{}'",
+                    agent,
+                    method_id
+                );
                 self.pending_auth_methods.clear();
                 self.messages.push(ChatMessage::from_role_and_text(
                     "assistant",
@@ -549,12 +564,18 @@ impl State {
         if response.is_error {
             log::error!("Error: {:?}", response.error_message);
             self.awaiting_response = false;
-            return Task::perform(async { response.error_message.unwrap_or("Error".to_string()) }, ChatAction::SendMessageError);
+            return Task::perform(
+                async { response.error_message.unwrap_or("Error".to_string()) },
+                ChatAction::SendMessageError,
+            );
         }
         if choices.is_empty() {
             log::error!("No response from model.");
             self.awaiting_response = false;
-            return Task::perform(async { "No response from model".into() }, ChatAction::SendMessageError);
+            return Task::perform(
+                async { "No response from model".into() },
+                ChatAction::SendMessageError,
+            );
         }
         self.messages.append(
             choices[0]
@@ -603,8 +624,11 @@ impl State {
 
     fn on_models_loaded(&mut self, models: Vec<ModelInfo>) -> Task<ChatAction> {
         self.available_models = models;
-        if (self.selected_model.is_none() && !self.available_models.is_empty()) ||
-        !self.available_models.contains(self.selected_model.as_ref().unwrap()) {
+        if (self.selected_model.is_none() && !self.available_models.is_empty())
+            || !self
+                .available_models
+                .contains(self.selected_model.as_ref().unwrap())
+        {
             self.selected_model = Some(self.available_models[0].clone());
         }
         self.awaiting_response = false;
@@ -613,6 +637,7 @@ impl State {
 
     fn on_tools_loaded(&mut self, tools: Vec<crate::models::Tool>) -> Task<ChatAction> {
         self.available_tools = tools;
+        self.selected_tools = vec![];
         Task::none()
     }
 
@@ -747,7 +772,10 @@ impl State {
     }
 
     fn save_chat_history(&self) -> Task<ChatAction> {
-        Task::perform(save_chat_history(self.messages.clone(), self.chat_id.clone()), ChatAction::ChatHistorySaved)
+        Task::perform(
+            save_chat_history(self.messages.clone(), self.chat_id.clone()),
+            ChatAction::ChatHistorySaved,
+        )
     }
 
     fn chat_history_saved(&mut self, result: Result<ChatHistory, String>) -> Task<ChatAction> {
@@ -806,13 +834,13 @@ impl State {
         container(
             Card::new(
                 Text::new("Error"),
-                Text::new(self.error_message.clone().unwrap())
+                Text::new(self.error_message.clone().unwrap()),
             )
-            .on_close(ChatAction::CloseErrorCard)
+            .on_close(ChatAction::CloseErrorCard),
         )
-            .align_y(Alignment::Center)
-            .align_x(Alignment::Center)
-            .into()
+        .align_y(Alignment::Center)
+        .align_x(Alignment::Center)
+        .into()
     }
 
     fn build_message_list<'a>(&'a self, theme: &'a Theme) -> Element<'a, ChatAction> {
@@ -877,12 +905,7 @@ impl State {
     fn build_input_area(&self) -> Element<'_, ChatAction> {
         // Build the list of available chat targets.
         let mut targets: Vec<ChatTarget> = vec![ChatTarget::Llm];
-        targets.extend(
-            self.available_agents
-                .iter()
-                .cloned()
-                .map(ChatTarget::Agent),
-        );
+        targets.extend(self.available_agents.iter().cloned().map(ChatTarget::Agent));
 
         let target_picker = pick_list(
             targets,
@@ -966,17 +989,13 @@ impl State {
         if !self.awaiting_response {
             btn = btn.on_press(ChatAction::ResumeAgent { agent });
         }
-        let row_widgets: Row<'_, ChatAction> = Row::new()
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .push(btn);
+        let row_widgets: Row<'_, ChatAction> =
+            Row::new().spacing(10).align_y(Alignment::Center).push(btn);
         Some(row_widgets.into())
     }
 
     fn build_slash_command_row(&self) -> Option<Element<'_, ChatAction>> {
-        if self.available_commands.is_empty()
-            || matches!(self.chat_target, ChatTarget::Llm)
-        {
+        if self.available_commands.is_empty() || matches!(self.chat_target, ChatTarget::Llm) {
             return None;
         }
         let mut row_widgets: Row<'_, ChatAction> = Row::new().spacing(6).align_y(Alignment::Center);
@@ -993,9 +1012,13 @@ impl State {
             }
             row_widgets = row_widgets.push(btn);
         }
-        Some(scrollable(row_widgets).direction(scrollable::Direction::Horizontal(
-            scrollable::Scrollbar::default(),
-        )).into())
+        Some(
+            scrollable(row_widgets)
+                .direction(scrollable::Direction::Horizontal(
+                    scrollable::Scrollbar::default(),
+                ))
+                .into(),
+        )
     }
 
     fn build_auth_row(&self) -> Option<Element<'_, ChatAction>> {
@@ -1007,7 +1030,8 @@ impl State {
             ChatTarget::Llm => return None,
         };
 
-        let mut row_widgets: Row<'_, ChatAction> = Row::new().spacing(10).align_y(Alignment::Center);
+        let mut row_widgets: Row<'_, ChatAction> =
+            Row::new().spacing(10).align_y(Alignment::Center);
         row_widgets = row_widgets.push(text("Sign in:"));
         for method in &self.pending_auth_methods {
             let label = format!("{} ({})", method.name, method.id);
@@ -1102,13 +1126,8 @@ fn agent_event_subscription(agent_name: &String) -> impl iced::futures::Stream<I
 }
 
 enum AgentSubState {
-    WaitingForSession {
-        name: String,
-        attempts: u32,
-    },
-    Streaming {
-        stream: BroadcastStream<AgentEvent>,
-    },
+    WaitingForSession { name: String, attempts: u32 },
+    Streaming { stream: BroadcastStream<AgentEvent> },
 }
 
 #[cfg(test)]
@@ -1150,6 +1169,7 @@ mod tests {
                 client: Clients::OpenAI(0),
             }],
             available_tools: vec![],
+            selected_tools: vec![],
             awaiting_response: false,
             pending_tool_calls: HashSet::new(),
             files: None,
@@ -1198,6 +1218,7 @@ mod tests {
                 client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
+            selected_tools: vec![],
             awaiting_response: false,
             pending_tool_calls: HashSet::new(),
             files: None,
@@ -1255,6 +1276,7 @@ mod tests {
                 client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
+            selected_tools: vec![],
             awaiting_response: true,
             pending_tool_calls: HashSet::new(),
             files: None,
@@ -1312,6 +1334,7 @@ mod tests {
                 client: Clients::OpenAI(1),
             }],
             available_tools: vec![],
+            selected_tools: vec![],
             awaiting_response: true,
             pending_tool_calls: HashSet::new(),
             files: None,
@@ -1332,7 +1355,7 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
             choices: vec![],
             is_error: true,
-            error_message: Some("error message".into())
+            error_message: Some("error message".into()),
         });
         let actions = state.update(response);
 
@@ -1364,11 +1387,14 @@ mod tests {
         let action = ChatAction::ModelSelected(model_name.clone());
         let _ = state.update(action);
 
-        assert_eq!(state.selected_model, Some(ModelInfo {
-            name: model_name.clone(),
-            id: model_name,
-            client: Clients::OpenAI(0),
-        }));
+        assert_eq!(
+            state.selected_model,
+            Some(ModelInfo {
+                name: model_name.clone(),
+                id: model_name,
+                client: Clients::OpenAI(0),
+            })
+        );
     }
 
     #[test]

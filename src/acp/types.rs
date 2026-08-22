@@ -63,9 +63,7 @@ pub enum AgentUpdate {
         content_summary: Option<String>,
     },
     /// The agent published a plan / checklist.
-    Plan {
-        entries: Vec<PlanEntry>,
-    },
+    Plan { entries: Vec<PlanEntry> },
     /// Available slash commands changed.
     AvailableCommands(Vec<AvailableCommand>),
     /// The session's mode changed.

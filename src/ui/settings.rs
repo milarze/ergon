@@ -5,8 +5,8 @@ use iced::{Alignment, Element, Length, Task, Theme};
 use iced_aw::number_input;
 
 use crate::config::{
-    AcpAgentConfig, Config, McpAuthConfig, McpConfig, McpStdioConfig,
-    McpStreamableHttpConfig, OpenAIConfig,
+    AcpAgentConfig, Config, McpAuthConfig, McpConfig, McpStdioConfig, McpStreamableHttpConfig,
+    OpenAIConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,7 +146,9 @@ impl State {
 
     /// Returns true if any LLM provider config changed between `old` and `new`.
     fn llm_configs_changed(old: &Config, new: &Config) -> bool {
-        old.openai_compatible != new.openai_compatible || old.anthropic != new.anthropic || old.vllm != new.vllm
+        old.openai_compatible != new.openai_compatible
+            || old.anthropic != new.anthropic
+            || old.vllm != new.vllm
     }
 
     /// Returns true if the MCP server list changed.
@@ -535,11 +537,16 @@ impl State {
                 row![
                     text_input("Alias", &openai_config.alias)
                         .on_input(move |alias| SettingsAction::ChangeOpenAIAlias(index, alias)),
-                    text_input("Enter API Key", &self.config.openai_compatible[index].api_key)
-                        .on_input(move |api_key| SettingsAction::ChangeOpenAIKey(index, api_key)),
-                    text_input("Enter Endpoint", &self.config.openai_compatible[index].endpoint)
-                        .on_input(move |endpoint| SettingsAction::ChangeOpenAIUrl(index, endpoint)),
-
+                    text_input(
+                        "Enter API Key",
+                        &self.config.openai_compatible[index].api_key
+                    )
+                    .on_input(move |api_key| SettingsAction::ChangeOpenAIKey(index, api_key)),
+                    text_input(
+                        "Enter Endpoint",
+                        &self.config.openai_compatible[index].endpoint
+                    )
+                    .on_input(move |endpoint| SettingsAction::ChangeOpenAIUrl(index, endpoint)),
                     button(iced_fonts::lucide::trash())
                         .on_press(SettingsAction::RemoveOpenAIConfig(index))
                 ]
@@ -798,11 +805,9 @@ impl State {
             let workspace_root = cfg.workspace_root.clone().unwrap_or_default();
 
             let header = row![
-                text_input("Name", &cfg.name).on_input(move |name| {
-                    SettingsAction::ChangeAcpAgentName(index, name)
-                }),
-                button(iced_fonts::lucide::trash())
-                    .on_press(SettingsAction::RemoveAcpAgent(index))
+                text_input("Name", &cfg.name)
+                    .on_input(move |name| { SettingsAction::ChangeAcpAgentName(index, name) }),
+                button(iced_fonts::lucide::trash()).on_press(SettingsAction::RemoveAcpAgent(index))
             ]
             .spacing(10)
             .align_y(Alignment::Center);
@@ -862,7 +867,10 @@ mod tests {
             endpoint: "https://api.openai.com/v1/".to_string(),
             alias: "OpenAI".into(),
         });
-        let _ = state.update(SettingsAction::ChangeOpenAIKey(0, "new_api_key".to_string()));
+        let _ = state.update(SettingsAction::ChangeOpenAIKey(
+            0,
+            "new_api_key".to_string(),
+        ));
         assert_eq!(state.config.openai_compatible[0].api_key, "new_api_key");
     }
 
@@ -878,7 +886,10 @@ mod tests {
             0,
             "https://new.endpoint.com".to_string(),
         ));
-        assert_eq!(state.config.openai_compatible[0].endpoint, "https://new.endpoint.com");
+        assert_eq!(
+            state.config.openai_compatible[0].endpoint,
+            "https://new.endpoint.com"
+        );
     }
 
     #[test]
@@ -982,7 +993,10 @@ mod tests {
         // Assuming update_settings persists the changes, we can check the config
         assert_eq!(state.config.theme, Theme::Dark);
         assert_eq!(state.config.openai_compatible[0].api_key, "test_key");
-        assert_eq!(state.config.openai_compatible[0].endpoint, "https://api.test.com");
+        assert_eq!(
+            state.config.openai_compatible[0].endpoint,
+            "https://api.test.com"
+        );
         assert_eq!(state.config.openai_compatible[0].alias, "OpenAI");
 
         assert_eq!(state.config.anthropic.api_key, "hello");

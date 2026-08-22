@@ -201,7 +201,10 @@ impl AgentSessionHandle {
     }
 
     /// Send a plain text prompt to the agent.
-    pub async fn prompt_text(&self, text: impl Into<String>) -> Result<PromptOutcome, SessionError> {
+    pub async fn prompt_text(
+        &self,
+        text: impl Into<String>,
+    ) -> Result<PromptOutcome, SessionError> {
         self.prompt(vec![ContentBlock::Text(TextContent::new(text.into()))])
             .await
     }
@@ -305,9 +308,8 @@ pub async fn spawn_session(
     // We use a oneshot to ferry the cloned `ConnectionTo<Agent>` and the
     // initialize response (for `auth_methods`) out of the `connect_with`
     // closure. The closure then parks until shutdown.
-    let (handshake_tx, handshake_rx) = oneshot::channel::<
-        Result<(ConnectionTo<Agent>, InitializeResponse), AcpError>,
-    >();
+    let (handshake_tx, handshake_rx) =
+        oneshot::channel::<Result<(ConnectionTo<Agent>, InitializeResponse), AcpError>>();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     // Build per-handler state clones up front. Each `on_receive_*` closure
@@ -323,109 +325,114 @@ pub async fn spawn_session(
     let state_for_term_wait = Arc::clone(&state);
 
     let join: JoinHandle<Result<(), AcpError>> = tokio::spawn(async move {
-        let result = Client
-            .builder()
-            .on_receive_notification(
-                async move |notif: SessionNotification, _cx| {
-                    let update = map_session_update(notif.update);
-                    let _ = state_for_notif.events.send(AgentEvent::Update(update));
+        let result =
+            Client
+                .builder()
+                .on_receive_notification(
+                    async move |notif: SessionNotification, _cx| {
+                        let update = map_session_update(notif.update);
+                        let _ = state_for_notif.events.send(AgentEvent::Update(update));
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_notification!(),
+                )
+                .on_receive_request(
+                    async move |req: RequestPermissionRequest, responder, _cx| {
+                        let resp =
+                            permissions::resolve_request(&req, &state_for_perm.permission_policy);
+                        responder.respond(resp)
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: ReadTextFileRequest, responder, _cx| {
+                        match acp_fs::read_text_file(&state_for_read.fs_sandbox, req).await {
+                            Ok(r) => responder.respond(r),
+                            Err(e) => responder.respond_with_error(e),
+                        }
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: WriteTextFileRequest, responder, _cx| {
+                        match acp_fs::write_text_file(&state_for_write.fs_sandbox, req).await {
+                            Ok(r) => responder.respond(r),
+                            Err(e) => responder.respond_with_error(e),
+                        }
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: CreateTerminalRequest, responder, _cx| {
+                        match state_for_term_create.terminals.create(req).await {
+                            Ok(r) => responder.respond(r),
+                            Err(e) => responder.respond_with_error(e),
+                        }
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: TerminalOutputRequest, responder, _cx| {
+                        match state_for_term_output.terminals.output(req).await {
+                            Ok(r) => responder.respond(r),
+                            Err(e) => responder.respond_with_error(e),
+                        }
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: ReleaseTerminalRequest, responder, _cx| {
+                        match state_for_term_release.terminals.release(req).await {
+                            Ok(r) => responder.respond(r),
+                            Err(e) => responder.respond_with_error(e),
+                        }
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: KillTerminalRequest, responder, _cx| match state_for_term_kill
+                        .terminals
+                        .kill(req)
+                        .await
+                    {
+                        Ok(r) => responder.respond(r),
+                        Err(e) => responder.respond_with_error(e),
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |req: WaitForTerminalExitRequest, responder, _cx| {
+                        match state_for_term_wait.terminals.wait_for_exit(req).await {
+                            Ok(r) => responder.respond(r),
+                            Err(e) => responder.respond_with_error(e),
+                        }
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .connect_with(transport, |connection: ConnectionTo<Agent>| async move {
+                    // Initialize, advertising fs + terminal capabilities.
+                    let caps = ClientCapabilities::new()
+                        .fs(FileSystemCapabilities::new()
+                            .read_text_file(true)
+                            .write_text_file(true))
+                        .terminal(true);
+                    let init = connection
+                        .send_request(
+                            InitializeRequest::new(ProtocolVersion::V1).client_capabilities(caps),
+                        )
+                        .block_task()
+                        .await?;
+
+                    // Hand the connection + init response back to the caller.
+                    // Session creation happens out-of-band so the caller can
+                    // observe `auth_required` errors.
+                    let _ = handshake_tx.send(Ok((connection.clone(), init)));
+
+                    // Wait for the controller to signal shutdown.
+                    let _ = shutdown_rx.await;
                     Ok(())
-                },
-                agent_client_protocol::on_receive_notification!(),
-            )
-            .on_receive_request(
-                async move |req: RequestPermissionRequest, responder, _cx| {
-                    let resp =
-                        permissions::resolve_request(&req, &state_for_perm.permission_policy);
-                    responder.respond(resp)
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: ReadTextFileRequest, responder, _cx| {
-                    match acp_fs::read_text_file(&state_for_read.fs_sandbox, req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: WriteTextFileRequest, responder, _cx| {
-                    match acp_fs::write_text_file(&state_for_write.fs_sandbox, req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: CreateTerminalRequest, responder, _cx| {
-                    match state_for_term_create.terminals.create(req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: TerminalOutputRequest, responder, _cx| {
-                    match state_for_term_output.terminals.output(req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: ReleaseTerminalRequest, responder, _cx| {
-                    match state_for_term_release.terminals.release(req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: KillTerminalRequest, responder, _cx| {
-                    match state_for_term_kill.terminals.kill(req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .on_receive_request(
-                async move |req: WaitForTerminalExitRequest, responder, _cx| {
-                    match state_for_term_wait.terminals.wait_for_exit(req).await {
-                        Ok(r) => responder.respond(r),
-                        Err(e) => responder.respond_with_error(e),
-                    }
-                },
-                agent_client_protocol::on_receive_request!(),
-            )
-            .connect_with(transport, |connection: ConnectionTo<Agent>| async move {
-                // Initialize, advertising fs + terminal capabilities.
-                let caps = ClientCapabilities::new()
-                    .fs(FileSystemCapabilities::new()
-                        .read_text_file(true)
-                        .write_text_file(true))
-                    .terminal(true);
-                let init = connection
-                    .send_request(InitializeRequest::new(ProtocolVersion::V1).client_capabilities(caps))
-                    .block_task()
-                    .await?;
-
-                // Hand the connection + init response back to the caller.
-                // Session creation happens out-of-band so the caller can
-                // observe `auth_required` errors.
-                let _ = handshake_tx.send(Ok((connection.clone(), init)));
-
-                // Wait for the controller to signal shutdown.
-                let _ = shutdown_rx.await;
-                Ok(())
-            })
-            .await;
+                })
+                .await;
 
         if let Err(ref e) = result {
             let _ = state.events.send(AgentEvent::Fatal(format!("{e:?}")));

@@ -26,9 +26,7 @@ impl Clients {
             Clients::OpenAI(index) => {
                 if let Some(openai_config) = Config::default().openai_compatible.get(*index) {
                     let openai_client = openai::OpenAIClient::new(openai_config.to_owned());
-                    openai_client
-                        .complete_message(request)
-                        .await
+                    openai_client.complete_message(request).await
                 } else {
                     Err(anyhow::anyhow!("Invalid OpenAI client index: {}", index))
                 }
@@ -66,7 +64,9 @@ impl ModelManager {
 
         for (index, openai_config) in Config::default().openai_compatible.iter().enumerate() {
             let openai_client = openai::OpenAIClient::new(openai_config.clone());
-            let mut models = self.get_openai_compatible_models(index, openai_client).await;
+            let mut models = self
+                .get_openai_compatible_models(index, openai_client)
+                .await;
             all_models.append(&mut models);
         }
 
@@ -127,7 +127,11 @@ impl ModelManager {
         Ok(models.iter().find(|m| m.name == name).cloned())
     }
 
-    async fn get_openai_compatible_models(&self, index: usize, openai_client: openai::OpenAIClient) -> Vec<ModelInfo> {
+    async fn get_openai_compatible_models(
+        &self,
+        index: usize,
+        openai_client: openai::OpenAIClient,
+    ) -> Vec<ModelInfo> {
         let mut models = Vec::new();
         if let Ok(openai_models) = openai_client.list_models().await {
             for model in openai_models {

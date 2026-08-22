@@ -1,6 +1,9 @@
 use serde_json::json;
 
-use crate::{api::clients::Model, models::{CompletionRequest, CompletionResponse, Content, Message}};
+use crate::{
+    api::clients::Model,
+    models::{CompletionRequest, CompletionResponse, Content, Message},
+};
 
 pub trait OpenAICompatible {
     async fn request(&self, request: CompletionRequest) -> anyhow::Result<CompletionResponse>;
@@ -58,7 +61,10 @@ pub trait OpenAICompatible {
 
         let response = client
             .get(url)
-            .header("Authorization", format!("Bearer {}", self.api_key().unwrap()))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.api_key().unwrap()),
+            )
             .header("Content-Type", "application/json")
             .send()
             .await;

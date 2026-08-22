@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use url::Url;
@@ -58,7 +58,12 @@ pub async fn wait_for_oauth_callback(port: u16) -> Result<OAuthCallbackResult> {
         handle_single_request(&listener),
     )
     .await
-    .map_err(|_| anyhow!("OAuth callback timed out after {} seconds", CALLBACK_TIMEOUT_SECS))?;
+    .map_err(|_| {
+        anyhow!(
+            "OAuth callback timed out after {} seconds",
+            CALLBACK_TIMEOUT_SECS
+        )
+    })?;
 
     result
 }
@@ -132,11 +137,7 @@ async fn handle_single_request(listener: &TcpListener) -> Result<OAuthCallbackRe
                         .cloned()
                         .unwrap_or_default();
                     send_response(&mut stream, 200, ERROR_HTML).await?;
-                    return Err(anyhow!(
-                        "OAuth authorization denied: {} ({})",
-                        error,
-                        desc
-                    ));
+                    return Err(anyhow!("OAuth authorization denied: {} ({})", error, desc));
                 }
                 send_response(&mut stream, 400, ERROR_HTML).await?;
                 continue;
@@ -160,11 +161,7 @@ async fn handle_single_request(listener: &TcpListener) -> Result<OAuthCallbackRe
     }
 }
 
-async fn send_response(
-    stream: &mut tokio::net::TcpStream,
-    status: u16,
-    body: &str,
-) -> Result<()> {
+async fn send_response(stream: &mut tokio::net::TcpStream, status: u16, body: &str) -> Result<()> {
     let status_text = match status {
         200 => "OK",
         400 => "Bad Request",
@@ -184,10 +181,7 @@ async fn send_response(
         .write_all(response.as_bytes())
         .await
         .context("Failed to write response")?;
-    stream
-        .flush()
-        .await
-        .context("Failed to flush response")?;
+    stream.flush().await.context("Failed to flush response")?;
 
     Ok(())
 }
@@ -242,8 +236,7 @@ mod tests {
                 .await
                 .unwrap();
             // Missing code parameter
-            let request =
-                "GET /callback?state=csrf_state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+            let request = "GET /callback?state=csrf_state HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
             stream.write_all(request.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
             let mut buf = vec![0u8; 4096];

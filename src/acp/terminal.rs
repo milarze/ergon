@@ -78,9 +78,7 @@ impl TerminalRegistry {
             .kill_on_drop(true);
 
         let mut child = cmd.spawn().map_err(|e| {
-            AcpError::internal_error().data(serde_json::Value::String(format!(
-                "spawn failed: {e}"
-            )))
+            AcpError::internal_error().data(serde_json::Value::String(format!("spawn failed: {e}")))
         })?;
 
         let stdout = child.stdout.take();
@@ -217,17 +215,12 @@ impl TerminalRegistry {
     }
 
     async fn get(&self, id: &TerminalId) -> Result<Arc<TerminalState>, AcpError> {
-        self.terminals
-            .lock()
-            .await
-            .get(id)
-            .cloned()
-            .ok_or_else(|| {
-                AcpError::invalid_params().data(serde_json::Value::String(format!(
-                    "unknown terminal id: {}",
-                    id.0
-                )))
-            })
+        self.terminals.lock().await.get(id).cloned().ok_or_else(|| {
+            AcpError::invalid_params().data(serde_json::Value::String(format!(
+                "unknown terminal id: {}",
+                id.0
+            )))
+        })
     }
 
     /// Drop all terminals (kill any still running). Called on session shutdown.

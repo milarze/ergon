@@ -104,10 +104,9 @@ impl AgentManager {
             .map_err(EnsureSessionError::Other)?;
         match handle.ensure_session().await {
             Ok(_) => Ok(handle),
-            Err(SessionError::AuthRequired { methods }) => Err(EnsureSessionError::AuthRequired {
-                handle,
-                methods,
-            }),
+            Err(SessionError::AuthRequired { methods }) => {
+                Err(EnsureSessionError::AuthRequired { handle, methods })
+            }
             Err(SessionError::Other(e)) => Err(EnsureSessionError::Other(e)),
         }
     }
@@ -145,10 +144,7 @@ impl AgentManager {
 
     pub async fn shutdown_all(&self) -> Result<()> {
         let drained: Vec<_> = {
-            let mut g = self
-                .sessions
-                .write()
-                .map_err(|e| anyhow!(e.to_string()))?;
+            let mut g = self.sessions.write().map_err(|e| anyhow!(e.to_string()))?;
             g.drain().collect()
         };
         for (_, handle) in drained {

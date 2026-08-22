@@ -135,7 +135,9 @@ pub enum ChatAction {
         result: Result<(), String>,
     },
     SlashCommandSelected(String),
-    ResumeAgent { agent: String },
+    ResumeAgent {
+        agent: String,
+    },
     AgentResumed {
         agent: String,
         result: Result<crate::ui::chat::tasks::AgentResumeOutcome, String>,

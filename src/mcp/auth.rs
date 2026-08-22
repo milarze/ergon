@@ -306,13 +306,10 @@ async fn run_oauth_authorization_inner(server_config: McpStreamableHttpConfig) -
     // Start the callback listener first so the port is bound before the browser
     // redirects back. tokio::spawn eagerly polls the future.
     let port = redirect_port;
-    let callback_task = tokio::spawn(async move { oauth_callback::wait_for_oauth_callback(port).await });
+    let callback_task =
+        tokio::spawn(async move { oauth_callback::wait_for_oauth_callback(port).await });
 
-    log::info!(
-        "MCP '{}': authorization URL: {}",
-        server_name,
-        auth_url
-    );
+    log::info!("MCP '{}': authorization URL: {}", server_name, auth_url);
 
     // Open the user's browser; log (but don't fail) if it can't be opened.
     if let Err(e) = open::that(&auth_url) {
@@ -323,7 +320,10 @@ async fn run_oauth_authorization_inner(server_config: McpStreamableHttpConfig) -
             auth_url
         );
     } else {
-        log::info!("MCP '{}': opened browser for OAuth2 authorization", server_name);
+        log::info!(
+            "MCP '{}': opened browser for OAuth2 authorization",
+            server_name
+        );
     }
 
     let callback_result = callback_task

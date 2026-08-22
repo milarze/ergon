@@ -70,9 +70,9 @@ pub async fn write_text_file(
     sandbox.check_path(&request.path)?;
     if let Some(parent) = request.path.parent() {
         if !parent.as_os_str().is_empty() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| AcpError::internal_error().data(serde_json::Value::String(e.to_string())))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                AcpError::internal_error().data(serde_json::Value::String(e.to_string()))
+            })?;
         }
     }
     tokio::fs::write(&request.path, &request.content)

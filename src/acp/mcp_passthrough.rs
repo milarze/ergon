@@ -21,10 +21,7 @@ use crate::config::{McpAuthConfig, McpConfig};
 /// `caps` is read from the agent's initialize response and used to gate
 /// HTTP/SSE servers. Stdio entries are always included if the command path
 /// is non-empty.
-pub fn mcp_servers_from_configs(
-    configs: &[McpConfig],
-    caps: &McpCapabilities,
-) -> Vec<McpServer> {
+pub fn mcp_servers_from_configs(configs: &[McpConfig], caps: &McpCapabilities) -> Vec<McpServer> {
     let mut out = Vec::with_capacity(configs.len());
     for cfg in configs {
         if let Some(s) = convert_one(cfg, caps) {
@@ -54,10 +51,7 @@ fn convert_one(cfg: &McpConfig, caps: &McpCapabilities) -> Option<McpServer> {
             let headers = match &h.auth {
                 McpAuthConfig::None => Vec::new(),
                 McpAuthConfig::BearerToken { token } if !token.is_empty() => {
-                    vec![HttpHeader::new(
-                        "Authorization",
-                        format!("Bearer {token}"),
-                    )]
+                    vec![HttpHeader::new("Authorization", format!("Bearer {token}"))]
                 }
                 McpAuthConfig::BearerToken { .. } => Vec::new(),
                 // OAuth2 tokens live in Ergon's encrypted store and are

@@ -25,8 +25,15 @@ impl Default for ChatHistory {
 impl ChatHistory {
     pub fn from_messages(messages: Vec<Message>, chat_id: Option<String>) -> Self {
         ChatHistory {
-            summary: if let Some(message) =  messages.first() {
-                Some(message.content.iter().filter_map(|c| c.as_text()).collect::<Vec<_>>().join(" "))
+            summary: if let Some(message) = messages.first() {
+                Some(
+                    message
+                        .content
+                        .iter()
+                        .filter_map(|c| c.as_text())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                )
             } else {
                 Some("No messages yet".to_string())
             },
@@ -46,7 +53,10 @@ pub struct ChatSummary {
 
 pub async fn store_chat_history(chat_history: ChatHistory, chat_history_dir: &str) -> Result<()> {
     if !std::fs::exists(chat_history_dir).unwrap_or(false) {
-        return Err(anyhow::anyhow!("Chat history directory does not exist: {}", chat_history_dir));
+        return Err(anyhow::anyhow!(
+            "Chat history directory does not exist: {}",
+            chat_history_dir
+        ));
     }
 
     Ok(std::fs::write(
@@ -60,12 +70,16 @@ pub async fn list_chat_summaries(chat_history_dir: &str) -> Result<Vec<ChatSumma
     if std::fs::exists(chat_history_dir).unwrap_or(false) {
         for entry in std::fs::read_dir(chat_history_dir)? {
             let entry = entry?;
-            if entry.path().is_file() && entry.path().extension().and_then(|s| s.to_str()) == Some("json") {
+            if entry.path().is_file()
+                && entry.path().extension().and_then(|s| s.to_str()) == Some("json")
+            {
                 let content = std::fs::read_to_string(entry.path())?;
                 let chat_history: ChatHistory = serde_json::from_str(&content)?;
                 summaries.push(ChatSummary {
                     id: chat_history.id,
-                    summary: chat_history.summary.unwrap_or_else(|| "No summary available".to_string()),
+                    summary: chat_history
+                        .summary
+                        .unwrap_or_else(|| "No summary available".to_string()),
                     last_updated: chat_history.last_updated,
                 });
             }
@@ -80,11 +94,17 @@ pub async fn delete_chat_history(chat_history_id: &str, chat_history_dir: &str) 
         std::fs::remove_file(file_path)?;
         Ok(())
     } else {
-        Err(anyhow::anyhow!("Chat history not found: {}", chat_history_id))
+        Err(anyhow::anyhow!(
+            "Chat history not found: {}",
+            chat_history_id
+        ))
     }
 }
 
-pub async fn get_chat_history(chat_history_id: &str, chat_history_dir: &str) -> Result<Option<ChatHistory>> {
+pub async fn get_chat_history(
+    chat_history_id: &str,
+    chat_history_dir: &str,
+) -> Result<Option<ChatHistory>> {
     let file_path = chat_history_file_path(chat_history_id, chat_history_dir);
     if std::fs::exists(&file_path).unwrap_or(false) {
         let content = std::fs::read_to_string(file_path)?;
